@@ -12,7 +12,7 @@ camera.
 - **Hands stay free.** The phone can sit in a pocket with the screen off. A tap on the temple
   pauses and resumes.
 
-Used daily on Ray-Ban Meta Gen 1. Meta's Wearables Device Access Toolkit, which the app is built
+Built and tested on Ray-Ban Meta Gen 1. Meta's Wearables Device Access Toolkit, which the app is built
 on, also covers Ray-Ban Meta Gen 2, Oakley Meta and Meta Ray-Ban Display; those are untested
 here. Not affiliated with Meta, OpenAI or Google.
 
