@@ -19,8 +19,11 @@
 ## Установка
 
 1. Скачай `tupo-vision.apk` из [последнего релиза](../../releases/latest) и установи.
-2. В приложении Meta AI включи Developer Mode: настройки приложения, раздел About, пять тапов
-   по номеру версии, затем переключатель Developer Mode. Без него привязка не пройдёт.
+2. Надень очки, чтобы они были на связи с Meta AI, и включи в нём Developer Mode:
+   Settings → App info, пять тапов по App version, переключатель Developer Mode, Enable.
+   На том же экране у Device Access Toolkit нажми Install, если он не установлен.
+   Без Developer Mode привязка падает с ошибкой Error while opening link. Тогда выключи
+   и включи Developer Mode заново, перезапусти Meta AI и привяжи ещё раз.
 3. В Tupo Vision: выдай разрешения, привяжи очки, нажми Continue with ChatGPT.
 4. Нажми «Начать разговор» и говори. Телефон можно убрать в карман.
 

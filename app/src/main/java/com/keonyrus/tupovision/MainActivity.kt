@@ -246,8 +246,11 @@ private fun GlassesSection(
       OutlinedButton(onClick = onInstallMetaAi) { Text("Открыть Meta AI в Google Play") }
     }
     Text(
-        "В Meta AI должен быть включён Developer Mode: настройки приложения, раздел About, " +
-            "пять тапов по номеру версии, затем переключатель Developer Mode.",
+        "Сначала включи Developer Mode в Meta AI, очки при этом надеты и на связи: " +
+            "Settings → App info, пять тапов по App version, переключатель Developer Mode, " +
+            "Enable. Там же у Device Access Toolkit нажми Install, если он не установлен. " +
+            "Если Meta AI пишет Error while opening link, значит Developer Mode не включён: " +
+            "выключи и включи его заново, перезапусти Meta AI и привяжи ещё раз.",
         style = MaterialTheme.typography.bodySmall,
     )
     StatusLine(state.registered, "Приложение привязано к очкам (${state.registration})")
