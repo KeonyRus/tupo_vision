@@ -87,7 +87,7 @@ class KeepAliveService : Service() {
   private fun buildNotification(): Notification {
     val manager = getSystemService(NotificationManager::class.java)
     manager.createNotificationChannel(
-        NotificationChannel(CHANNEL_ID, "Разговор", NotificationManager.IMPORTANCE_LOW).apply {
+        NotificationChannel(CHANNEL_ID, "Conversation", NotificationManager.IMPORTANCE_LOW).apply {
           setShowBadge(false)
         },
     )
@@ -100,8 +100,8 @@ class KeepAliveService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
     return Notification.Builder(this, CHANNEL_ID)
-        .setContentTitle("Tupo Vision слушает")
-        .setContentText("Камера и микрофон очков активны")
+        .setContentTitle("Tupo Vision is listening")
+        .setContentText("The glasses camera and microphone are in use")
         .setSmallIcon(R.drawable.ic_stat)
         .setOngoing(true)
         .setContentIntent(open)

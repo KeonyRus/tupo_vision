@@ -1,80 +1,165 @@
 # Tupo Vision
 
-Голосовой ассистент на GPT для очков Ray-Ban Meta. Видит то, что видит камера очков, и отвечает
-в их динамики. Работает от подписки ChatGPT, без API-ключа.
+**Your own AI assistant in Ray-Ban Meta glasses.** An open-source Android app that lets the
+glasses talk to ChatGPT or Gemini instead of Meta AI, and lets the model see through the glasses
+camera.
 
-## Два режима
+- **GPT on your ChatGPT plan, no API key.** Sign in with ChatGPT and requests count against the
+  Go, Plus or Pro plan you already pay for.
+- **Live voice with Gemini Live.** The model hears and speaks by itself, you can interrupt it,
+  and it watches the camera continuously. Needs a Gemini API key.
+- **Sees what you see.** Frames come from the glasses camera, not the phone.
+- **Hands stay free.** The phone can sit in a pocket with the screen off. A tap on the temple
+  pauses and resumes.
 
-**Живой голос (Gemini Live).** Модель сама слышит и сама говорит, её можно перебивать,
-видео с очков идёт к ней постоянно. Нужен ключ Gemini API из aistudio.google.com.
+Used daily on Ray-Ban Meta Gen 1. Meta's Wearables Device Access Toolkit, which the app is built
+on, also covers Ray-Ban Meta Gen 2, Oakley Meta and Meta Ray-Ban Display; those are untested
+here. Not affiliated with Meta, OpenAI or Google.
+
+> **Status: a personal project.** Built for one pair of Ray-Ban Meta Gen 1 and one Android phone.
+> It works there; expect rough edges elsewhere. Bug reports with the in-app log are welcome.
+
+## What you need
+
+- Ray-Ban Meta glasses, paired with the **Meta AI** app on your phone
+- An Android phone with Android 12 or newer
+- One of:
+  - a ChatGPT **Go, Plus or Pro** plan, or
+  - a **Gemini API key** from [aistudio.google.com](https://aistudio.google.com) (takes a minute)
+
+## Install
+
+1. **Download** `tupo-vision.apk` from the [latest release](../../releases/latest) on your phone
+   and open it. Android will ask to allow installing from your browser: allow it.
+2. **Turn on Developer Mode in Meta AI.** Put the glasses on so they are connected, then in the
+   Meta AI app open **Settings → App info**, tap **App version** five times, switch
+   **Developer Mode** on and tap **Enable**. On the same screen, tap **Install** next to
+   **Device Access Toolkit** if it is not installed.
+3. **Open Tupo Vision** and tap **Grant permissions**.
+4. Tap **Link glasses through Meta AI** and confirm in Meta AI.
+5. **Pick an assistant:**
+   - *ChatGPT plan:* tap **Continue with ChatGPT**, sign in, and allow the app to use your plan.
+   - *Gemini Live:* switch on **Live voice**, paste your Gemini API key, tap **Save key**.
+6. Tap **Start conversation** and talk. The first time, Meta AI asks for access to the glasses
+   camera.
+
+That is all. Next time, only step 6.
+
+## Using it
+
+- **Pause and resume:** one tap on the temple of the glasses.
+- **Stop:** the Stop button in the app.
+- **ChatGPT mode** listens for a phrase, sends it with one camera frame, and reads the answer
+  aloud. Set your **Speech language** in Settings (for example `en-US` or `ru-RU`). An optional
+  wake word makes it ignore everything that does not contain that word.
+- **Live voice mode** is a continuous conversation. The model picks up your language by itself.
+  If it keeps cutting itself off, turn off **Interrupt by voice** in Settings.
+
+## Which mode to pick
+
+| | ChatGPT plan | Gemini Live |
+|---|---|---|
+| Needs | Go, Plus or Pro plan | Gemini API key |
+| Feels like | Ask, wait a moment, hear the answer | A live conversation |
+| Voice | Your phone's text-to-speech | The model's own voice |
+| Interrupting | No | Yes |
+| Camera | One frame per question | About one frame a second |
+| Cost | Included in your plan's limits | Google's free tier or per-minute rates |
+
+The ChatGPT sign-in does not accept audio, which is why that mode recognises and synthesises
+speech on the phone. The real ChatGPT voice mode is not available to other apps on a plan.
+
+## Troubleshooting
+
+- **Meta AI says “Error while opening link”.** Developer Mode is not on. Switch it off and on
+  again in Meta AI (step 2), force-stop and reopen Meta AI, then link again.
+- **ChatGPT sign-in fails with a network error.** Some phones cut background apps off the
+  network. Tap **Continue with ChatGPT** again. If it repeats, turn off data saver and battery
+  saver for the sign-in, and check that a VPN or DNS filter is not blocking the app.
+- **The model cannot see.** Check the line under the Start button: it shows the stream state and
+  the last frame. The log says when no video arrives.
+- **Answers are quiet.** With the glasses microphone on, the volume follows the phone's call
+  volume.
+- **Anything else:** scroll down, tap **Copy log**, and attach it to an issue.
+
+## Privacy and security
+
+- The app has no server and no analytics of its own. Audio, frames and text go straight from your
+  phone to the assistant you picked: OpenAI in ChatGPT mode, Google in Gemini Live mode. In
+  ChatGPT mode, speech is recognised and synthesised by your phone's own speech services.
+- ChatGPT tokens and the Gemini key are stored on the phone only, encrypted with a key held in
+  the Android Keystore. They are never written to the log.
+- Meta's SDK is asked not to send its own analytics and crash reports from this app.
+- The camera in your glasses records people around you. Follow the law where you are and tell
+  people when the assistant is on.
+
+### Checking a download
+
+Each release note states the SHA-256 of the APK and which key signed it. Builds signed with the
+project key carry this certificate fingerprint:
 
 ```
-микрофон очков + кадр раз в секунду → Gemini Live по одному WebSocket → голос в динамики очков
+EF:D9:96:B9:3B:08:81:72:AE:8F:F5:14:37:F9:60:FF:DA:E5:51:97:B2:B9:78:47:2C:25:DA:BA:F3:0E:42:AE
 ```
 
-**GPT по подписке ChatGPT.** Без ключа, тратит лимиты плана Go, Plus или Pro. Этот вход в GPT
-аудио не принимает, поэтому речь распознаётся и озвучивается на телефоне.
+Check it with `apksigner verify --print-certs tupo-vision.apk`. Install the app only from this
+repository's releases.
+
+## How it works
 
 ```
-микрофон очков → распознавание речи на телефоне → вопрос + кадр с камеры очков
-    → GPT (Responses API) → озвучка на телефоне → динамики очков
+ChatGPT mode
+  glasses mic → speech recognition on the phone → question + camera frame
+      → OpenAI Responses API on your ChatGPT plan → text-to-speech → glasses speakers
+
+Gemini Live mode
+  glasses mic + one camera frame a second → Gemini Live API over one WebSocket
+      → the model's voice → glasses speakers
 ```
 
-Камера очков в обоих режимах идёт через Meta Wearables Device Access Toolkit.
+- Camera and session: [Meta Wearables Device Access Toolkit](https://github.com/facebook/meta-wearables-dat-android)
+- ChatGPT plan: [Sign in with ChatGPT](https://developers.openai.com/siwc) for open-source apps
+- Live voice: [Gemini Live API](https://ai.google.dev/gemini-api/docs/live)
 
-## Установка
+## Limitations
 
-1. Скачай `tupo-vision.apk` из [последнего релиза](../../releases/latest) и установи.
-2. Надень очки, чтобы они были на связи с Meta AI, и включи в нём Developer Mode:
-   Settings → App info, пять тапов по App version, переключатель Developer Mode, Enable.
-   На том же экране у Device Access Toolkit нажми Install, если он не установлен.
-   Без Developer Mode привязка падает с ошибкой Error while opening link. Тогда выключи
-   и включи Developer Mode заново, перезапусти Meta AI и привяжи ещё раз.
-3. В Tupo Vision: выдай разрешения, привяжи очки. Дальше либо включи «Живой голос» и
-   вставь ключ Gemini, либо нажми Continue with ChatGPT.
-4. Нажми «Начать разговор» и говори. Телефон можно убрать в карман.
+- The app runs in Meta's Developer Mode. Publishing it to a store would need registration in
+  Meta's Wearables Developer Center.
+- Starting a conversation needs the phone. Pausing and resuming does not.
+- Sign in with ChatGPT for open-source apps is a preview, and its terms can change.
+- Glasses microphones reach the phone at phone-call quality over Bluetooth.
 
-## Управление
+## Build it yourself
 
-- Один тап по дужке очков ставит разговор на паузу, второй продолжает.
-- В режиме живого голоса модель можно перебивать. Если она обрывает сама себя, выключи
-  «Перебивать голосом».
-- Кодовое слово в настройках (режим ChatGPT): ассистент отвечает только на фразы с ним.
-- «Фото вместо видеокадра»: чётче для мелкого текста, но медленнее.
-- Громкость ответа с микрофоном очков регулируется как громкость звонка.
+```
+./gradlew assembleDebug
+```
 
-## Что не проверено
+Needs JDK 17 and Android SDK 36. GitHub Actions builds every push to `main` and publishes the
+APK as the `latest` release.
 
-Приложение собрано без доступа к очкам, на железе его ещё никто не запускал.
+The published APK is signed with a private key kept in the repository's Actions secrets
+(`SIGNING_KEYSTORE_B64`, `SIGNING_KEYSTORE_PASSWORD`). A fork has no such secrets, so its builds
+are signed with a throwaway key and cannot be installed over the published app. To give a fork a
+stable key of its own, create a PKCS#12 keystore with the alias `tupovision` and add those two
+secrets.
 
-- Ray-Ban Meta первого поколения: в документации Meta поколение не указано.
-- Формат видеокадра: код ждёт планарный YUV 4:2:0. Если цвета на превью кадра неверные,
-  включи «Фото вместо видеокадра».
-- Идёт ли распознавание речи с микрофона очков, зависит от телефона. Если слышит плохо,
-  выключи «Микрофон очков».
-- Вход ChatGPT на Android: в документации OpenAI описан только вход через локальный адрес,
-  про телефоны там ничего нет.
+## Similar projects
 
-В приложении есть журнал. Если что-то не работает, скопируй его кнопкой «Скопировать журнал».
+Other open-source ways to put your own assistant on these glasses:
 
-## Ограничения
+- [VisionClaw](https://github.com/Intent-Lab/VisionClaw): Gemini Live with agent actions, iOS and Android
+- [MetaLens AI](https://github.com/przemek-nowicki/meta-lens-ai): ChatGPT, Gemini and Grok with your API keys, Android
+- [OpenVision](https://github.com/rayl15/OpenVision): several cloud and on-device models, iOS
 
-- Задержка до ответа больше, чем в голосовом режиме ChatGPT: речь распознаётся и
-  синтезируется отдельно от модели.
-- Голос системный, не голос ChatGPT.
-- Sign in with ChatGPT для open-source приложений сейчас в превью, условия могут измениться.
-- Функции SDK очков работают в Developer Mode. Для раздачи другим людям приложение надо
-  регистрировать в Wearables Developer Center.
+## License
 
-## Сборка
+MIT for the code in this repository. Meta's SDK is a dependency and is covered by the Meta
+Wearables Developer Terms.
 
-GitHub Actions собирает APK на каждый пуш в `main` и кладёт его в релиз `latest`.
-Локально: `./gradlew assembleDebug`, нужен JDK 17 и Android SDK 36.
+---
 
-Ключ в `signing/debug.keystore` лежит в репозитории намеренно: им подписываются только
-тестовые сборки, чтобы новая версия ставилась поверх старой.
-
-## Лицензии
-
-Код приложения: MIT. SDK очков подключается как зависимость и распространяется на условиях
-Meta Wearables Developer Terms.
+**По-русски.** Tupo Vision ставит в очки Ray-Ban Meta своего ассистента: GPT по подписке ChatGPT
+без API-ключа или живой голос Gemini Live. Установка: скачай APK из релиза, включи Developer Mode
+в Meta AI (Settings → App info, пять тапов по App version), выдай разрешения, привяжи очки,
+выбери ассистента и нажми Start conversation.

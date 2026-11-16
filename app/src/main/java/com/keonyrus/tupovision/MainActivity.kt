@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -48,6 +49,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -165,14 +167,14 @@ private fun Screen(
       Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
           Text(error, color = Warning)
-          TextButton(onClick = { Engine.clearError() }) { Text("Скрыть") }
+          TextButton(onClick = { Engine.clearError() }) { Text("Dismiss") }
         }
       }
     }
 
     ConversationSection(state, onStart)
     GlassesSection(state, onGrantPermissions, onInstallMetaAi, onRegister, onUnregister)
-    LiveSection(state)
+    AssistantSection(state)
     if (!state.liveMode) ChatGptSection(state, onSignIn)
     SettingsSection(state)
     LogSection(state, onCopyLog)
@@ -181,56 +183,57 @@ private fun Screen(
 
 @Composable
 private fun ConversationSection(state: UiState, onStart: () -> Unit) {
-  val brainReady = if (state.liveMode) state.geminiKeySet else state.signedIn
-  val ready = brainReady && state.registered && state.permissionsGranted
-  Section("Разговор") {
+  val assistantReady = if (state.liveMode) state.geminiKeySet else state.signedIn
+  val ready = assistantReady && state.registered && state.permissionsGranted
+  Section("Conversation") {
     Button(
         onClick = { if (state.running) Engine.stop() else onStart() },
         enabled = state.running || ready,
         modifier = Modifier.fillMaxWidth().height(56.dp),
     ) {
-      Text(if (state.running) "Остановить" else "Начать разговор")
+      Text(if (state.running) "Stop" else "Start conversation")
     }
     if (!ready && !state.running) {
       Text(
-          "Сначала пройди шаги ниже: разрешения, привязка очков, " +
-              if (state.liveMode) "ключ Gemini." else "вход в ChatGPT.",
+          "Finish the steps below first: permissions, linking the glasses, and " +
+              if (state.liveMode) "a Gemini API key." else "ChatGPT sign-in.",
           style = MaterialTheme.typography.bodySmall,
       )
     }
     Text(state.phase.label, style = MaterialTheme.typography.titleMedium, color = Accent)
     if (state.partial.isNotEmpty()) Text("… ${state.partial}")
-    if (state.question.isNotEmpty()) Text("Ты: ${state.question}")
+    if (state.question.isNotEmpty()) Text("You: ${state.question}")
     if (state.answer.isNotEmpty()) {
       Text((if (state.liveMode) "Gemini: " else "GPT: ") + state.answer)
     }
     val latency = state.latencyMs
     if (latency != null) {
       Text(
-          "До первого звука: %.1f с".format(latency / 1000.0),
+          "Time to first sound: %.1f s".format(latency / 1000.0),
           style = MaterialTheme.typography.bodySmall,
       )
     }
     val frame = state.frame
     if (frame != null) {
       Text(
-          if (state.liveMode) "Что сейчас видит модель:" else "Кадр, который ушёл в ChatGPT:",
+          if (state.liveMode) "What the model sees now:" else "Frame sent with the question:",
           style = MaterialTheme.typography.bodySmall,
       )
       Image(
           bitmap = frame.asImageBitmap(),
-          contentDescription = "Кадр с камеры очков",
+          contentDescription = "Frame from the glasses camera",
           modifier = Modifier.fillMaxWidth().heightIn(max = 280.dp),
           contentScale = ContentScale.Fit,
       )
     }
     if (state.running) {
       Text(
-          "Сессия: ${state.sessionState} · поток: ${state.streamState} · кадр: ${state.frameInfo}",
+          "Session: ${state.sessionState} · stream: ${state.streamState} · " +
+              "frame: ${state.frameInfo}",
           style = MaterialTheme.typography.bodySmall,
       )
       Text(
-          "Один тап по дужке очков ставит на паузу, второй продолжает.",
+          "One tap on the temple of the glasses pauses, a second tap resumes.",
           style = MaterialTheme.typography.bodySmall,
       )
     }
@@ -245,59 +248,61 @@ private fun GlassesSection(
     onRegister: () -> Unit,
     onUnregister: () -> Unit,
 ) {
-  Section("1. Очки") {
-    StatusLine(state.permissionsGranted, "Разрешения: Bluetooth и микрофон")
+  Section("1. Glasses") {
+    StatusLine(state.permissionsGranted, "Permissions: Bluetooth and microphone")
     if (!state.permissionsGranted) {
-      OutlinedButton(onClick = onGrantPermissions) { Text("Выдать разрешения") }
+      OutlinedButton(onClick = onGrantPermissions) { Text("Grant permissions") }
     }
-    StatusLine(state.metaInstalled, "Приложение Meta AI установлено")
+    StatusLine(state.metaInstalled, "Meta AI app installed")
     if (!state.metaInstalled) {
-      OutlinedButton(onClick = onInstallMetaAi) { Text("Открыть Meta AI в Google Play") }
+      OutlinedButton(onClick = onInstallMetaAi) { Text("Open Meta AI in Google Play") }
     }
     Text(
-        "Сначала включи Developer Mode в Meta AI, очки при этом надеты и на связи: " +
-            "Settings → App info, пять тапов по App version, переключатель Developer Mode, " +
-            "Enable. Там же у Device Access Toolkit нажми Install, если он не установлен. " +
-            "Если Meta AI пишет Error while opening link, значит Developer Mode не включён: " +
-            "выключи и включи его заново, перезапусти Meta AI и привяжи ещё раз.",
+        "Turn on Developer Mode in Meta AI first, with the glasses on and connected: " +
+            "Settings → App info, tap App version five times, switch Developer Mode on, " +
+            "Enable. On the same screen tap Install next to Device Access Toolkit if it is " +
+            "not installed. If Meta AI says “Error while opening link”, Developer Mode is " +
+            "off: switch it off and on again, restart Meta AI and link once more.",
         style = MaterialTheme.typography.bodySmall,
     )
-    StatusLine(state.registered, "Приложение привязано к очкам (${state.registration})")
+    StatusLine(state.registered, "App linked to the glasses (${state.registration})")
     if (state.registered) {
-      StatusLine(state.hasActiveDevice, "Очки на связи (устройств: ${state.deviceCount})")
-      TextButton(onClick = onUnregister) { Text("Отвязать") }
+      StatusLine(state.hasActiveDevice, "Glasses connected (devices: ${state.deviceCount})")
+      TextButton(onClick = onUnregister) { Text("Unlink") }
     } else {
       OutlinedButton(onClick = onRegister, enabled = state.permissionsGranted) {
-        Text("Привязать очки через Meta AI")
+        Text("Link glasses through Meta AI")
       }
     }
   }
 }
 
 @Composable
-private fun LiveSection(state: UiState) {
-  Section("2. Мозг") {
+private fun AssistantSection(state: UiState) {
+  Section("2. Assistant") {
     SettingSwitch(
-        title = "Живой голос (Gemini Live)",
+        title = "Live voice (Gemini Live)",
         subtitle =
-            "Модель сама слышит и говорит, её можно перебивать, видео идёт постоянно. " +
-                "Нужен ключ Gemini. Выключено: GPT по подписке ChatGPT.",
+            "The model hears and speaks by itself, you can interrupt it, and it sees the " +
+                "camera all the time. Needs a Gemini API key. Off: GPT on your ChatGPT plan.",
         checked = state.liveMode,
         enabled = !state.running,
         onChange = { Engine.setLiveMode(it) },
     )
     if (state.liveMode) {
-      StatusLine(state.geminiKeySet, "Ключ Gemini сохранён на телефоне")
+      StatusLine(state.geminiKeySet, "Gemini API key saved on this phone")
       if (state.geminiKeySet) {
-        TextButton(onClick = { Engine.clearGeminiKey() }) { Text("Удалить ключ") }
+        TextButton(onClick = { Engine.clearGeminiKey() }) { Text("Delete key") }
       } else {
         var draft by remember { mutableStateOf("") }
         OutlinedTextField(
             value = draft,
             onValueChange = { draft = it },
-            label = { Text("Ключ из aistudio.google.com") },
+            label = { Text("Key from aistudio.google.com") },
             singleLine = true,
             visualTransformation = PasswordVisualTransformation(),
+            // A password field keeps the key out of keyboard suggestions and learning.
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
             modifier = Modifier.fillMaxWidth(),
         )
         Button(
@@ -307,10 +312,10 @@ private fun LiveSection(state: UiState) {
             },
             enabled = draft.isNotBlank(),
         ) {
-          Text("Сохранить ключ")
+          Text("Save key")
         }
         Text(
-            "Ключ хранится только на этом телефоне в зашифрованном виде и уходит только в Google.",
+            "The key is stored encrypted on this phone only and is sent only to Google.",
             style = MaterialTheme.typography.bodySmall,
         )
       }
@@ -321,11 +326,11 @@ private fun LiveSection(state: UiState) {
 @Composable
 private fun ChatGptSection(state: UiState, onSignIn: () -> Unit) {
   Section("ChatGPT") {
-    StatusLine(state.signedIn, "Подписка ChatGPT подключена")
+    StatusLine(state.signedIn, "ChatGPT plan connected")
     if (state.signedIn) {
       var expanded by remember { mutableStateOf(false) }
       Box {
-        OutlinedButton(onClick = { expanded = true }) { Text("Модель: ${state.model}") }
+        OutlinedButton(onClick = { expanded = true }) { Text("Model: ${state.model}") }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
           state.models.forEach { id ->
             DropdownMenuItem(
@@ -339,20 +344,20 @@ private fun ChatGptSection(state: UiState, onSignIn: () -> Unit) {
         }
       }
       Text(
-          "Запросы расходуют лимиты плана. Расход по приложениям: chatgpt.com/settings/usage",
+          "Requests count against your plan limits. Usage per app: chatgpt.com/settings/usage",
           style = MaterialTheme.typography.bodySmall,
       )
-      TextButton(onClick = { Engine.signOut() }) { Text("Выйти") }
+      TextButton(onClick = { Engine.signOut() }) { Text("Sign out") }
     } else {
       Button(onClick = onSignIn) { Text("Continue with ChatGPT") }
       if (state.loginInProgress) {
         Text(
-            "Жду вход в браузере. Если вкладка закрыта, нажми кнопку ещё раз.",
+            "Waiting for the sign-in in the browser. If the tab was closed, tap the button again.",
             style = MaterialTheme.typography.bodySmall,
         )
       }
       Text(
-          "Нужен план Go, Plus или Pro. На экране входа разреши использовать план.",
+          "Needs a Go, Plus or Pro plan. On the sign-in screen, allow the app to use your plan.",
           style = MaterialTheme.typography.bodySmall,
       )
     }
@@ -361,46 +366,50 @@ private fun ChatGptSection(state: UiState, onSignIn: () -> Unit) {
 
 @Composable
 private fun SettingsSection(state: UiState) {
-  Section("Настройки") {
+  Section("Settings") {
     Text(
-        "Меняются на остановленном разговоре и действуют со следующего запуска.",
+        "Change these while the conversation is stopped; they apply from the next start.",
         style = MaterialTheme.typography.bodySmall,
     )
     SettingSwitch(
-        title = "Микрофон очков",
-        subtitle = "Выключи, если очки слышат хуже телефона. Тогда слушает телефон.",
+        title = "Glasses microphone",
+        subtitle = "Turn off if the glasses hear worse than the phone. The phone listens then.",
         checked = state.glassesMic,
         enabled = !state.running,
         onChange = { Engine.setGlassesMic(it) },
     )
     SettingSwitch(
-        title = "Перебивать голосом",
+        title = "Interrupt by voice",
         subtitle =
-            "Для живого голоса. Выключи, если модель обрывает сама себя: " +
-                "тогда она не слушает, пока говорит.",
+            "Live voice only. Turn off if the model cuts itself off: " +
+                "it then stops listening while it speaks.",
         checked = state.bargeIn,
         enabled = !state.running,
         onChange = { Engine.setBargeIn(it) },
     )
     SettingSwitch(
-        title = "Фото вместо видеокадра",
-        subtitle = "Для режима ChatGPT. Чётче для мелкого текста, но медленнее.",
+        title = "Photo instead of video frame",
+        subtitle = "ChatGPT mode only. Sharper for small text, but slower.",
         checked = state.photoMode,
         enabled = !state.running,
         onChange = { Engine.setPhotoMode(it) },
     )
-    SettingSwitch(
-        title = "Говорю по-английски",
-        subtitle = "Для режима ChatGPT: язык распознавания и озвучки. Выключено: русский.",
-        checked = state.language == "en-US",
+    OutlinedTextField(
+        value = state.language,
+        onValueChange = { Engine.setLanguage(it.trim()) },
+        label = { Text("Speech language") },
+        supportingText = {
+          Text("ChatGPT mode only: language tag for recognition and voice, e.g. en-US, ru-RU.")
+        },
+        singleLine = true,
         enabled = !state.running,
-        onChange = { Engine.setLanguage(if (it) "en-US" else "ru-RU") },
+        modifier = Modifier.fillMaxWidth(),
     )
     OutlinedTextField(
         value = state.wakeWord,
         onValueChange = { Engine.setWakeWord(it) },
-        label = { Text("Кодовое слово (необязательно)") },
-        supportingText = { Text("Для режима ChatGPT: отвечаю только на фразы с этим словом.") },
+        label = { Text("Wake word (optional)") },
+        supportingText = { Text("ChatGPT mode only: answer only phrases that contain this word.") },
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
     )
@@ -409,8 +418,8 @@ private fun SettingsSection(state: UiState) {
 
 @Composable
 private fun LogSection(state: UiState, onCopyLog: () -> Unit) {
-  Section("Журнал") {
-    TextButton(onClick = onCopyLog) { Text("Скопировать журнал") }
+  Section("Log") {
+    TextButton(onClick = onCopyLog) { Text("Copy log") }
     Text(
         state.log.takeLast(60).joinToString("\n"),
         fontFamily = FontFamily.Monospace,

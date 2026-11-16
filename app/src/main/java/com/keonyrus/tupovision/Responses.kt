@@ -173,8 +173,8 @@ object Responses {
         event.optJSONObject("response")?.optJSONObject("incomplete_details")?.optString("reason")
     return when {
       message.isNotEmpty() -> message
-      !incomplete.isNullOrEmpty() -> "Ответ оборван: $incomplete"
-      else -> "Запрос не выполнен (${event.optString("type")})"
+      !incomplete.isNullOrEmpty() -> "The answer was cut short: $incomplete"
+      else -> "The request failed (${event.optString("type")})"
     }
   }
 }

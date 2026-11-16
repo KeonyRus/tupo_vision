@@ -105,7 +105,7 @@ object ChatGptAuth {
       openBrowser(authorizationUrl)
 
       val callback = withContext(Dispatchers.IO) { awaitCallback(server, state) }
-      log("Браузер вернул код входа, получаю токены")
+      log("The browser returned the sign-in code, requesting tokens")
       // The browser is still on top here, so the app counts as a background app, and saver modes
       // cut background apps off the network. Come back to the screen first, then keep trying
       // while the network opens up.
@@ -133,7 +133,7 @@ object ChatGptAuth {
   suspend fun accessToken(context: Context, forceRefresh: Boolean = false): String =
       refreshMutex.withLock {
         val appContext = context.applicationContext
-        val current = load(appContext) ?: throw AuthException("Нужно войти в ChatGPT")
+        val current = load(appContext) ?: throw AuthException("Sign in to ChatGPT")
         if (!forceRefresh && System.currentTimeMillis() < current.expiresAtMs) {
           return@withLock current.access
         }
@@ -151,7 +151,7 @@ object ChatGptAuth {
               // 400/401 here means the refresh token is dead; a network blip is not.
               if (e.status == 400 || e.status == 401) {
                 signOut(appContext)
-                throw AuthException("Сессия ChatGPT истекла, войди заново")
+                throw AuthException("The ChatGPT session expired, sign in again")
               }
               throw e
             }
@@ -177,7 +177,7 @@ object ChatGptAuth {
         if (System.currentTimeMillis() > deadline) throw e
         if (!announced) {
           announced = true
-          log("Сеть для приложения недоступна (${e.javaClass.simpleName}), пробую ещё")
+          log("The app has no network (${e.javaClass.simpleName}), retrying")
         }
         delay(pause)
         pause = (pause * 2).coerceAtMost(3000L)
@@ -223,31 +223,31 @@ object ChatGptAuth {
         }
         val error = uri.getQueryParameter("error")
         if (error != null) {
-          respond(client.getOutputStream(), 400, "ChatGPT не подключён", "Ошибка: $error")
-          throw AuthException("ChatGPT отказал во входе: $error")
+          respond(client.getOutputStream(), 400, "ChatGPT not connected", "Error: $error")
+          throw AuthException("ChatGPT declined the sign-in: $error")
         }
         val code = uri.getQueryParameter("code")
         val state = uri.getQueryParameter("state")
         val clientId = uri.getQueryParameter("client_id")?.trim()
         if (code.isNullOrEmpty() || state != expectedState) {
           // A stale tab or a stray request: answer it and keep waiting for the real one.
-          respond(client.getOutputStream(), 400, "Неверный ответ", "Повтори вход из приложения.")
+          respond(client.getOutputStream(), 400, "Unexpected reply", "Start the sign-in from the app again.")
           return@use
         }
         if (clientId.isNullOrEmpty()) {
-          respond(client.getOutputStream(), 400, "ChatGPT не подключён", "Нет client_id в ответе.")
-          throw AuthException("В ответе ChatGPT нет идентификатора клиента")
+          respond(client.getOutputStream(), 400, "ChatGPT not connected", "The reply has no client id.")
+          throw AuthException("The ChatGPT reply has no client id")
         }
         respond(
             client.getOutputStream(),
             200,
-            "ChatGPT подключён",
-            "Можно вернуться в Tupo Vision.",
+            "ChatGPT connected",
+            "You can go back to Tupo Vision.",
         )
         return Callback(code, clientId)
       }
     }
-    throw AuthException("Вход не завершён за 5 минут")
+    throw AuthException("Sign-in was not completed within 5 minutes")
   }
 
   private fun respond(out: java.io.OutputStream, status: Int, title: String, text: String) {
@@ -291,7 +291,7 @@ object ChatGptAuth {
           val status = connection.responseCode
           if (status !in 200..299) {
             val text = connection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
-            throw TokenEndpointException(status, "Ошибка входа ($status): ${text.take(300)}")
+            throw TokenEndpointException(status, "Sign-in error ($status): ${text.take(300)}")
           }
           JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
         } finally {
@@ -305,11 +305,12 @@ object ChatGptAuth {
     val expiresIn = token.optLong("expires_in", 0)
     val scopes = token.optString("scope").split(" ").filter { it.isNotBlank() }
     if (access.isEmpty() || refresh.isEmpty() || expiresIn <= 0) {
-      throw AuthException("ChatGPT вернул неполный ответ при входе")
+      throw AuthException("ChatGPT returned an incomplete sign-in reply")
     }
     if (PLAN_SCOPE !in scopes) {
       throw AuthException(
-          "ChatGPT не дал доступ к лимитам плана. Нужен Go, Plus или Pro, и разрешение на экране входа.",
+          "ChatGPT did not grant plan usage. It needs a Go, Plus or Pro plan and your approval " +
+              "on the sign-in screen.",
       )
     }
     return Credentials(

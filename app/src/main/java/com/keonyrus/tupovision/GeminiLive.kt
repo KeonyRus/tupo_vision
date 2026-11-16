@@ -158,11 +158,11 @@ class GeminiLive(
 
         override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
           webSocket.close(1000, null)
-          reportClosed("код $code" + if (reason.isNotEmpty()) ": $reason" else "")
+          reportClosed("code $code" + if (reason.isNotEmpty()) ": $reason" else "")
         }
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-          reportClosed("код $code" + if (reason.isNotEmpty()) ": $reason" else "")
+          reportClosed("code $code" + if (reason.isNotEmpty()) ": $reason" else "")
         }
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
@@ -250,7 +250,7 @@ class GeminiLive(
             AudioFormat.ENCODING_PCM_16BIT,
         )
     if (minSize <= 0) {
-      events.onLog("Микрофон не поддерживает 16 кГц")
+      events.onLog("The microphone does not support 16 kHz")
       return
     }
     // The call-audio source is the one Android runs echo cancellation on, which is what lets the
@@ -265,7 +265,7 @@ class GeminiLive(
         )
     if (record.state != AudioRecord.STATE_INITIALIZED) {
       record.release()
-      events.onLog("Микрофон не открылся")
+      events.onLog("Could not open the microphone")
       return
     }
     var echoCanceler: AcousticEchoCanceler? = null
@@ -280,8 +280,8 @@ class GeminiLive(
         noiseSuppressor = NoiseSuppressor.create(record.audioSessionId)?.also { it.setEnabled(true) }
       }
       record.startRecording()
-      val routedTo = record.routedDevice?.productName ?: "неизвестно"
-      events.onLog("Микрофон: $routedTo")
+      val routedTo = record.routedDevice?.productName ?: "unknown"
+      events.onLog("Microphone: $routedTo")
 
       val chunk = ByteArray(MIC_CHUNK_BYTES)
       val silence = ByteArray(MIC_CHUNK_BYTES)
@@ -312,7 +312,7 @@ class GeminiLive(
             AudioFormat.ENCODING_PCM_16BIT,
         )
     if (minSize <= 0) {
-      events.onLog("Динамик не поддерживает 24 кГц")
+      events.onLog("The speaker does not support 24 kHz")
       return
     }
     val usage =
@@ -338,7 +338,7 @@ class GeminiLive(
             .build()
     if (player.state != AudioTrack.STATE_INITIALIZED) {
       player.release()
-      events.onLog("Динамик не открылся")
+      events.onLog("Could not open the speaker")
       return
     }
     track = player
@@ -398,14 +398,14 @@ class GeminiLive(
       val current = Frames.count
       if (current == lastFrame) {
         misses += 1
-        if (misses == 8 && sent == 0) events.onLog("Видео с очков не приходит, модель пока не видит")
+        if (misses == 8 && sent == 0) events.onLog("No video from the glasses yet, the model cannot see")
         continue
       }
       val jpeg = frameSource()
       if (jpeg == null) {
         misses += 1
         if (misses == 5 && sent == 0) {
-          events.onLog("Кадры приходят, но их формат не разобран (${Frames.info}), модель не видит")
+          events.onLog("Frames arrive in a layout the app cannot read (${Frames.info}), the model cannot see")
         }
         continue
       }

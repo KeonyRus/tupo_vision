@@ -32,7 +32,7 @@ object Frames {
     private set
 
   @Volatile
-  var info: String = "кадров ещё не было"
+  var info: String = "no frames yet"
     private set
 
   fun reset() {
@@ -42,7 +42,7 @@ object Frames {
       height = 0
     }
     count = 0
-    info = "кадров ещё не было"
+    info = "no frames yet"
   }
 
   /** Copies the frame out of the SDK's buffer, which is only valid during the callback. */
@@ -65,7 +65,7 @@ object Frames {
       height = frame.height
     }
     count += 1
-    info = "${frame.width}x${frame.height}, $size байт"
+    info = "${frame.width}x${frame.height}, $size bytes"
   }
 
   /**

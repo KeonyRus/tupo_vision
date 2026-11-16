@@ -52,12 +52,12 @@ const val DEFAULT_MODEL = "gpt-6.1-sol"
 val FALLBACK_MODELS: List<String> = listOf("gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna")
 
 enum class Phase(val label: String) {
-  IDLE("Остановлен"),
-  CONNECTING("Подключаюсь к очкам"),
-  LISTENING("Слушаю"),
-  THINKING("Думаю"),
-  SPEAKING("Отвечаю"),
-  PAUSED("Пауза"),
+  IDLE("Stopped"),
+  CONNECTING("Connecting"),
+  LISTENING("Listening"),
+  THINKING("Thinking"),
+  SPEAKING("Speaking"),
+  PAUSED("Paused"),
 }
 
 data class UiState(
@@ -85,7 +85,7 @@ data class UiState(
     val glassesMic: Boolean = true,
     val photoMode: Boolean = false,
     val wakeWord: String = "",
-    val language: String = "ru-RU",
+    val language: String = "en-US",
     /** True: live voice through Gemini Live. False: ChatGPT plan with on-phone speech. */
     val liveMode: Boolean = false,
     val geminiKeySet: Boolean = false,
@@ -160,7 +160,7 @@ object Engine {
           glassesMic = prefs.getBoolean("glasses_mic", true),
           photoMode = prefs.getBoolean("photo_mode", false),
           wakeWord = prefs.getString("wake_word", "") ?: "",
-          language = prefs.getString("language", "ru-RU") ?: "ru-RU",
+          language = prefs.getString("language", null) ?: Locale.getDefault().toLanguageTag(),
           geminiKeySet = SecureStore.get(app, GEMINI_KEY) != null,
           liveMode = prefs.getBoolean("live_mode", false),
           bargeIn = prefs.getBoolean("barge_in", true),
@@ -187,7 +187,7 @@ object Engine {
     if (wearablesReady) return
     wearablesReady = true
     Wearables.initialize(app).onFailure { error, _ ->
-      log("SDK очков не запустился: ${error.description}")
+      log("Glasses SDK failed to start: ${error.description}")
     }
     scope.launch {
       Wearables.registrationState.collect { value ->
@@ -211,7 +211,7 @@ object Engine {
 
   fun register(activity: Activity) {
     if (!wearablesReady) {
-      fail("Сначала выдай разрешения Bluetooth и микрофона")
+      fail("Grant the Bluetooth and microphone permissions first")
       return
     }
     Wearables.startRegistration(activity)
@@ -239,7 +239,7 @@ object Engine {
                 log = { message -> log(message) },
             )
             update { it.copy(signedIn = true) }
-            log("ChatGPT подключён")
+            log("ChatGPT connected")
             bringToFront()
             refreshModels()
           } catch (e: CancellationException) {
@@ -248,13 +248,13 @@ object Engine {
             val offline = e is java.net.UnknownHostException || e is java.net.ConnectException
             if (offline) {
               // Measured before returning to the screen, so it shows what the app saw.
-              log("Сеть глазами приложения: " + NetDiag.report(app))
+              log("Network as the app sees it: " + NetDiag.report(app))
               fail(
-                  "Вход в ChatGPT: браузер вошёл, но само приложение не достучалось до " +
-                      "auth.openai.com. Подробности в журнале внизу.",
+                  "ChatGPT sign-in: the browser signed in, but the app itself could not reach " +
+                      "auth.openai.com. Details are in the log below.",
               )
             } else {
-              fail("Вход в ChatGPT: ${e.message}")
+              fail("ChatGPT sign-in: ${e.message}")
             }
             bringToFront()
           } finally {
@@ -269,7 +269,7 @@ object Engine {
     if (_state.value.running) stop()
     ChatGptAuth.signOut(app)
     update { it.copy(signedIn = false) }
-    log("Вышел из ChatGPT. Доступ приложения можно отозвать в настройках ChatGPT.")
+    log("Signed out of ChatGPT. You can also revoke the app in ChatGPT settings.")
   }
 
   private fun openInBrowser(activity: Activity, url: Uri) {
@@ -306,12 +306,12 @@ object Engine {
                 model = if (state.model in ids) state.model else pickDefault(ids),
             )
           }
-          log("Моделей по подписке: ${ids.size}")
+          log("Models available on your plan: ${ids.size}")
         }
       } catch (e: CancellationException) {
         throw e
       } catch (e: Exception) {
-        log("Список моделей не получен: ${e.message}")
+        log("Could not load the model list: ${e.message}")
       }
     }
   }
@@ -363,7 +363,7 @@ object Engine {
     SecureStore.put(app, GEMINI_KEY, key)
     update { it.copy(geminiKeySet = true) }
     setLiveMode(true)
-    log("Ключ Gemini сохранён, включён живой голос")
+    log("Gemini key saved, live voice is on")
   }
 
   fun clearGeminiKey() {
@@ -371,7 +371,7 @@ object Engine {
     SecureStore.put(app, GEMINI_KEY, null)
     update { it.copy(geminiKeySet = false) }
     setLiveMode(false)
-    log("Ключ Gemini удалён")
+    log("Gemini key deleted")
   }
 
   fun clearError() {
@@ -389,15 +389,15 @@ object Engine {
   fun start(requestPermission: suspend (Permission) -> PermissionStatus) {
     if (_state.value.running) return
     if (_state.value.liveMode && !_state.value.geminiKeySet) {
-      fail("Сначала сохрани ключ Gemini")
+      fail("Save a Gemini API key first")
       return
     }
     if (!_state.value.liveMode && !_state.value.signedIn) {
-      fail("Сначала войди в ChatGPT")
+      fail("Sign in to ChatGPT first")
       return
     }
     if (!wearablesReady) {
-      fail("Сначала выдай разрешения Bluetooth и микрофона")
+      fail("Grant the Bluetooth and microphone permissions first")
       return
     }
     update { it.copy(running = true, phase = Phase.CONNECTING, error = null) }
@@ -405,13 +405,13 @@ object Engine {
       var granted = false
       Wearables.checkPermissionStatus(Permission.CAMERA)
           .onSuccess { status -> granted = status == PermissionStatus.Granted }
-          .onFailure { error, _ -> log("Проверка доступа к камере: ${error.description}") }
+          .onFailure { error, _ -> log("Camera permission check: ${error.description}") }
       if (!granted) {
         granted = requestPermission(Permission.CAMERA) == PermissionStatus.Granted
       }
       if (!_state.value.running) return@launch
       if (!granted) {
-        fail("Meta AI не дал доступ к камере очков")
+        fail("Meta AI did not grant access to the glasses camera")
         shutdown()
         return@launch
       }
@@ -419,7 +419,7 @@ object Engine {
         KeepAliveService.start(app)
         serviceStarted = true
       } catch (e: Exception) {
-        log("Фоновый режим не включился: ${e.message}")
+        log("Could not start background mode: ${e.message}")
       }
       openSession()
     }
@@ -427,7 +427,7 @@ object Engine {
 
   fun stop() {
     if (!_state.value.running) return
-    log("Остановлено")
+    log("Stopped")
     shutdown()
   }
 
@@ -442,14 +442,14 @@ object Engine {
               sessionJobs +=
                   scope.launch {
                     created.errors.collect { error ->
-                      log("Ошибка сессии: ${error.description}")
-                      update { it.copy(error = "Очки: ${error.description}") }
+                      log("Session error: ${error.description}")
+                      update { it.copy(error = "Glasses: ${error.description}") }
                     }
                   }
               created.start()
             },
             onFailure = { error, _ ->
-              fail("Сессия с очками не создана: ${error.description}")
+              fail("Could not open a session with the glasses: ${error.description}")
               shutdown()
             },
         )
@@ -464,11 +464,11 @@ object Engine {
       }
       DeviceSessionState.PAUSED -> {
         sessionStarted = false
-        pauseVoice("Очки поставили сессию на паузу")
+        pauseVoice("The glasses paused the session")
       }
       DeviceSessionState.STOPPED -> {
         if (_state.value.running) {
-          log("Очки завершили сессию")
+          log("The glasses ended the session")
           shutdown()
         }
       }
@@ -492,24 +492,24 @@ object Engine {
               sessionJobs +=
                   scope.launch {
                     video.errorStream.collect { error ->
-                      log("Ошибка видеопотока: ${error.description}")
+                      log("Video stream error: ${error.description}")
                     }
                   }
               video.start().onFailure { error, _ ->
-                log("Видеопоток не запустился: ${error.description}")
+                log("Video stream did not start: ${error.description}")
               }
               // Voice still works if the picture never arrives; say so and carry on without it.
               sessionJobs +=
                   scope.launch {
                     delay(STREAM_WAIT_MS)
                     if (_state.value.running && !streaming && !voiceActive) {
-                      log("Видео с очков не пошло за 10 секунд, работаю без картинки")
+                      log("No video from the glasses after 10 seconds, continuing without it")
                       startVoice()
                     }
                   }
             },
             onFailure = { error, _ ->
-              fail("Камера очков недоступна: ${error.description}")
+              fail("Glasses camera unavailable: ${error.description}")
               shutdown()
             },
         )
@@ -526,7 +526,7 @@ object Engine {
       // conversation follows, which makes the tap a hands-free pause button.
       StreamState.PAUSED -> {
         streaming = false
-        pauseVoice("Пауза. Тапни по дужке, чтобы продолжить")
+        pauseVoice("Paused. Tap the temple to continue")
       }
       StreamState.STOPPED,
       StreamState.CLOSED -> streaming = false
@@ -591,19 +591,19 @@ object Engine {
       val settings = _state.value
       val routed = settings.glassesMic && AudioRouter.enable(app)
       if (settings.glassesMic && !routed) {
-        log("Микрофон очков по Bluetooth недоступен, слушаю микрофоном телефона")
+        log("Glasses microphone unavailable over Bluetooth, using the phone microphone")
       }
       if (!voiceActive) return@launch
 
-      val speech = tts ?: Tts(app) { ok -> if (!ok) log("Синтез речи не запустился") }.also { tts = it }
+      val speech = tts ?: Tts(app) { ok -> if (!ok) log("Text-to-speech failed to start") }.also { tts = it }
       withTimeoutOrNull(3000) { while (!speech.ready) delay(50) }
-      if (!speech.configure(settings.language, routed)) {
-        log("В синтезе речи телефона нет голоса для ${settings.language}")
+      if (!speech.configure(speechLanguage(), routed)) {
+        log("The phone has no text-to-speech voice for ${speechLanguage()}")
       }
 
       val recognizer = stt ?: Stt(app, sttCallbacks).also { stt = it }
       if (!recognizer.isAvailable()) {
-        fail("На телефоне нет сервиса распознавания речи")
+        fail("This phone has no speech recognition service")
         shutdown()
         return@launch
       }
@@ -632,12 +632,15 @@ object Engine {
     if (!voiceActive) return
     update { it.copy(phase = Phase.LISTENING, partial = "") }
     try {
-      stt?.start(_state.value.language)
+      stt?.start(speechLanguage())
     } catch (e: Exception) {
-      log("Распознавание не стартовало: ${e.message}")
+      log("Speech recognition did not start: ${e.message}")
       listenAfter(1000)
     }
   }
+
+  private fun speechLanguage(): String =
+      _state.value.language.ifBlank { Locale.getDefault().toLanguageTag() }
 
   private fun listenAfter(delayMs: Long) {
     scope.launch {
@@ -669,12 +672,12 @@ object Engine {
               listenAfter(500)
             }
             SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> {
-              fail("Нет доступа к микрофону")
+              fail("No access to the microphone")
               shutdown()
             }
             else -> {
               errorStreak += 1
-              log("Распознавание речи: ошибка $code")
+              log("Speech recognition error $code")
               listenAfter(if (errorStreak > 5) 3000 else 800)
             }
           }
@@ -722,7 +725,7 @@ object Engine {
     val jpeg = withContext(Dispatchers.Default) { acquireFrame() }
     val preview = withContext(Dispatchers.Default) { jpeg?.let { Frames.preview(it) } }
     update { it.copy(frame = preview, frameInfo = Frames.info) }
-    if (jpeg == null) log("Кадра с очков нет, отвечаю без картинки")
+    if (jpeg == null) log("No frame from the glasses, answering without a picture")
 
     val answer = StringBuilder()
     val chunker = SentenceChunker()
@@ -788,20 +791,31 @@ object Engine {
     } catch (e: CancellationException) {
       throw e
     } catch (e: AuthException) {
-      fail(e.message ?: "Нужно войти в ChatGPT")
+      fail(e.message ?: "Sign in to ChatGPT")
       update { it.copy(signedIn = ChatGptAuth.isSignedIn(app)) }
       shutdown()
       return
     } catch (e: Exception) {
       val limit = e is ApiException && e.status == 429
       fail(
-          if (limit) "Лимит подписки ChatGPT исчерпан. Смотри chatgpt.com/settings/usage"
-          else "Запрос к ChatGPT: ${e.message}",
+          if (limit) "ChatGPT plan limit reached. See chatgpt.com/settings/usage"
+          else "ChatGPT request failed: ${e.message}",
       )
-      tts?.speak(if (limit) "Лимит подписки исчерпан." else "Ошибка запроса.")
+      tts?.speak(spokenError(limit))
       awaitSpeechEnd()
     }
     listen()
+  }
+
+  /** Spoken in the recognition language; the text-to-speech voice cannot read another one. */
+  private fun spokenError(limit: Boolean): String {
+    val russian = speechLanguage().startsWith("ru", ignoreCase = true)
+    return when {
+      limit && russian -> "Лимит подписки исчерпан."
+      limit -> "Plan limit reached."
+      russian -> "Ошибка запроса."
+      else -> "Request failed."
+    }
   }
 
   /** Listening must not start while the answer is still playing, or it would hear itself. */
@@ -834,7 +848,7 @@ object Engine {
                   is PhotoData.HEIC -> Frames.heicToJpeg(photo.data)
                 }
           }
-          .onFailure { error, _ -> log("Фото с очков: ${error.description}") }
+          .onFailure { error, _ -> log("Photo from the glasses: ${error.description}") }
     }
     return result
   }
@@ -842,15 +856,17 @@ object Engine {
   private fun instructions(hasImage: Boolean): String {
     val picture =
         if (hasImage) {
-          "К вопросу приложен кадр с камеры очков: это то, что пользователь видит прямо сейчас. " +
-              "Опирайся на кадр, когда вопрос про то, что перед глазами, и не описывай его без " +
-              "просьбы. Если нужного на кадре не видно или не разобрать, так и скажи."
+          "A frame from the glasses camera is attached to the question: it is what the user " +
+              "sees right now. Use it when the question is about what is in front of them, and " +
+              "do not describe it unasked. If what they ask about is not visible or not " +
+              "legible in the frame, say so."
         } else {
-          "Кадра с камеры сейчас нет. Если вопрос про то, что перед глазами, скажи, что не видишь."
+          "There is no camera frame right now. If the question is about what is in front of " +
+              "the user, say that you cannot see it."
         }
-    return "Ты голосовой ассистент в умных очках. Пользователь говорит с тобой вслух, твой ответ " +
-        "будет озвучен. Отвечай на языке вопроса, коротко и по делу: одно-три предложения, если " +
-        "не просят подробнее. Без списков, разметки, эмодзи и ссылок. " +
+    return "You are a voice assistant in smart glasses. The user talks to you out loud and your " +
+        "answer is read aloud. Answer in the language of the question, briefly and to the " +
+        "point: one to three sentences unless asked for more. No lists, markup, emoji or links. " +
         picture
   }
 
@@ -863,14 +879,14 @@ object Engine {
     scope.launch {
       val key = SecureStore.get(app, GEMINI_KEY)
       if (key == null) {
-        fail("Нет ключа Gemini")
+        fail("No Gemini API key")
         shutdown()
         return@launch
       }
       val wantGlasses = _state.value.glassesMic
       val onGlasses = AudioRouter.enableCall(app, wantGlasses)
       if (wantGlasses && !onGlasses) {
-        log("Звук очков по Bluetooth недоступен, говорю через телефон")
+        log("Glasses audio unavailable over Bluetooth, using the phone")
       }
       if (voiceActive) connectLive(key)
     }
@@ -909,7 +925,7 @@ object Engine {
     override fun onReady() = onMain {
       liveDrops = 0
       liveTurnDone = true
-      log(if (liveAttempt < 2) "Gemini Live на связи" else "Gemini Live на связи, упрощённый режим")
+      log(if (liveAttempt < 2) "Gemini Live connected" else "Gemini Live connected, basic setup")
       update { it.copy(phase = Phase.LISTENING, error = null) }
     }
 
@@ -943,7 +959,7 @@ object Engine {
       // The server ends every connection after about ten minutes and says so in advance.
       val key = SecureStore.get(app, GEMINI_KEY)
       if (key != null) {
-        log("Gemini переносит разговор на новое соединение")
+        log("Gemini is moving the conversation to a new connection")
         liveAttempt = 0
         connectLive(key)
       }
@@ -970,31 +986,31 @@ object Engine {
               reason.contains("HTTP 429")
       when {
         badKey -> {
-          fail("Gemini не принял ключ: $reason")
+          fail("Gemini rejected the API key: $reason")
           shutdown()
         }
         outOfQuota -> {
-          fail("Лимит Gemini исчерпан: $reason")
+          fail("Gemini quota reached: $reason")
           shutdown()
         }
         // Refused before the session opened: retry with fewer options each time.
         !wasReady -> {
           liveAttempt += 1
           if (liveAttempt > 2) {
-            fail("Gemini отклонил подключение: $reason")
+            fail("Gemini refused the connection: $reason")
             shutdown()
           } else {
-            log("Gemini закрыл подключение ($reason), пробую с меньшим набором настроек")
+            log("Gemini closed the connection ($reason), retrying with fewer options")
             connectLive(key)
           }
         }
         else -> {
           liveDrops += 1
           if (liveDrops > 5) {
-            fail("Связь с Gemini рвётся: $reason")
+            fail("The connection to Gemini keeps dropping: $reason")
             shutdown()
           } else {
-            log("Связь с Gemini оборвалась ($reason), переподключаюсь")
+            log("Connection to Gemini lost ($reason), reconnecting")
             liveAttempt = 0
             val dropped = owner
             scope.launch {
@@ -1012,12 +1028,12 @@ object Engine {
   }
 
   private fun liveInstructions(): String =
-      "Ты голосовой ассистент в умных очках. Ты слышишь пользователя и видишь видео с камеры " +
-          "его очков: это то, что у него перед глазами прямо сейчас. Говори естественно и " +
-          "коротко, как живой собеседник: одна-три фразы, если не просят подробнее. Отвечай на " +
-          "языке, на котором к тебе обращаются, по умолчанию по-русски. Опирайся на видео, " +
-          "когда спрашивают про то, что видно, и не описывай его без просьбы. Если нужного не " +
-          "видно или не разобрать, так и скажи. Отвечай только на речь, обращённую к тебе."
+      "You are a voice assistant in smart glasses. You hear the user and see video from the " +
+          "camera of their glasses: it is what is in front of them right now. Talk naturally " +
+          "and briefly, like a person in conversation: one to three sentences unless asked " +
+          "for more. Always answer in the language the user speaks to you. Use the video when " +
+          "asked about what is visible, and do not describe it unasked. If what they ask " +
+          "about is not visible or not legible, say so. Respond only to speech addressed to you."
 
   // ---- plumbing ----
 

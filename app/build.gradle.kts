@@ -6,6 +6,11 @@ plugins {
   alias(libs.plugins.compose.compiler)
 }
 
+// The published APK is signed with the project's private key, which exists only in the
+// repository's Actions secrets. Without it (a fork, a local build) Android's own throwaway debug
+// key signs the build; such a build cannot be installed over the published one.
+val signingKeystore: String? = System.getenv("SIGNING_KEYSTORE_FILE")
+
 android {
   namespace = "com.keonyrus.tupovision"
   compileSdk = 36
@@ -25,21 +30,25 @@ android {
   }
 
   signingConfigs {
-    // One fixed key for every build, so a new APK installs over the old one and the ChatGPT login
-    // survives the update. It signs sideloaded test builds only.
-    getByName("debug") {
-      storeFile = rootProject.file("signing/debug.keystore")
-      storePassword = "android"
-      keyAlias = "androiddebugkey"
-      keyPassword = "android"
+    if (signingKeystore != null) {
+      create("project") {
+        storeFile = file(signingKeystore)
+        storeType = "pkcs12"
+        storePassword = System.getenv("SIGNING_KEYSTORE_PASSWORD")
+        keyAlias = System.getenv("SIGNING_KEY_ALIAS") ?: "tupovision"
+        keyPassword = System.getenv("SIGNING_KEYSTORE_PASSWORD")
+      }
     }
   }
 
   buildTypes {
-    debug { signingConfig = signingConfigs.getByName("debug") }
+    debug {
+      if (signingKeystore != null) signingConfig = signingConfigs.getByName("project")
+    }
     release {
       isMinifyEnabled = false
-      signingConfig = signingConfigs.getByName("debug")
+      signingConfig =
+          signingConfigs.getByName(if (signingKeystore != null) "project" else "debug")
     }
   }
 

@@ -21,7 +21,7 @@ object NetDiag {
         val parts = ArrayList<String>()
         for (host in HOSTS) {
           val resolved = runCatching { InetAddress.getByName(host) }.isSuccess
-          parts.add("$host " + if (resolved) "находится" else "НЕ находится")
+          parts.add("$host " + if (resolved) "resolves" else "DOES NOT resolve")
         }
         runCatching {
           val connectivity = context.getSystemService(ConnectivityManager::class.java)
@@ -30,25 +30,25 @@ object NetDiag {
           val link = network?.let { connectivity.getLinkProperties(it) }
           val kind =
               when {
-                capabilities == null -> "для приложения закрыта"
+                capabilities == null -> "blocked for this app"
                 capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN) -> "VPN"
                 capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "Wi-Fi"
-                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "мобильная"
-                else -> "другая"
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "cellular"
+                else -> "other"
               }
-          parts.add("сеть: $kind")
+          parts.add("network: $kind")
           if (link != null && link.isPrivateDnsActive) {
-            parts.add("Private DNS: " + (link.privateDnsServerName ?: "авто"))
+            parts.add("Private DNS: " + (link.privateDnsServerName ?: "automatic"))
           }
           val saver =
               when (connectivity.restrictBackgroundStatus) {
-                ConnectivityManager.RESTRICT_BACKGROUND_STATUS_ENABLED -> "включена"
-                ConnectivityManager.RESTRICT_BACKGROUND_STATUS_WHITELISTED -> "включена, но не для нас"
-                else -> "выключена"
+                ConnectivityManager.RESTRICT_BACKGROUND_STATUS_ENABLED -> "on"
+                ConnectivityManager.RESTRICT_BACKGROUND_STATUS_WHITELISTED -> "on, this app exempt"
+                else -> "off"
               }
-          parts.add("экономия трафика: $saver")
+          parts.add("data saver: $saver")
           val power = context.getSystemService(PowerManager::class.java)
-          parts.add("энергосбережение: " + if (power.isPowerSaveMode) "включено" else "выключено")
+          parts.add("battery saver: " + if (power.isPowerSaveMode) "on" else "off")
         }
         parts.joinToString("; ")
       }
