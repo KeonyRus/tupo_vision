@@ -1,5 +1,6 @@
 package com.keonyrus.tupovision
 
+import android.app.KeyguardManager
 import android.content.ComponentName
 import android.content.Context
 import android.media.AudioManager
@@ -10,6 +11,7 @@ import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.os.SystemClock
 import android.provider.Settings
 import android.service.notification.NotificationListenerService
@@ -24,17 +26,18 @@ class MediaWatchService : NotificationListenerService()
  * Standby: start and stop the conversation from the glasses, phone in a pocket.
  *
  * The glasses cannot launch this app, but their tap-and-hold gesture can be assigned to "Music"
- * in the Meta AI app, which makes them ask a music app on the phone to play. Standby uses a music
- * app the user does not otherwise listen to as a tripwire: when that app shows any sign of life,
- * it is paused and the conversation toggles.
+ * in the Meta AI app, which makes them ask a music app on the phone to play. Standby uses that
+ * music app as a tripwire: when it starts playing while the phone is locked or its screen is off,
+ * it is paused and the conversation toggles. Starting music by hand, with the phone in use, is
+ * left alone, so the music app stays usable for music.
  *
- * Every media session change is logged as package and state, never titles, because what the
- * glasses actually make the music app do is only known by trying.
+ * Every media session change is logged as package and state, never titles.
  */
 object MediaWatch {
-  const val DEFAULT_TRIGGER = "com.amazon.mp3"
+  const val DEFAULT_TRIGGER = "com.spotify.music"
   // One gesture causes a burst of session changes; it must toggle once.
   private const val DEBOUNCE_MS = 4000L
+  private const val SILENCE_MS = 6000L
 
   private val handler = Handler(Looper.getMainLooper())
   private var manager: MediaSessionManager? = null
@@ -42,6 +45,10 @@ object MediaWatch {
   private var triggerPackage = DEFAULT_TRIGGER
   private var armed = false
   private var lastTriggerAt = 0L
+  private var lastIgnoredAt = 0L
+  // The music app may start playing a moment after the gesture was handled; keep it quiet.
+  private var silenceUntil = 0L
+  private var appContext: Context? = null
   private val watched = HashMap<MediaSession.Token, Pair<MediaController, MediaController.Callback>>()
 
   private val sessionsListener =
@@ -70,6 +77,7 @@ object MediaWatch {
       sessions.addOnActiveSessionsChangedListener(sessionsListener, listener, handler)
       manager = sessions
       component = listener
+      appContext = context.applicationContext
       triggerPackage = trigger.ifBlank { DEFAULT_TRIGGER }
       // Sessions that already exist are the baseline, not a gesture.
       armed = false
@@ -124,6 +132,10 @@ object MediaWatch {
     if (!armed) return
     Engine.log("Media: ${controller.packageName} is ${stateName(state)}")
     if (controller.packageName != triggerPackage || state == null) return
+    if (state.state == PlaybackState.STATE_PLAYING && SystemClock.elapsedRealtime() < silenceUntil) {
+      runCatching { controller.transportControls.pause() }
+      return
+    }
     // Asked to play: it either starts, or fails because nobody is signed in. Both count.
     val asked =
         state.state == PlaybackState.STATE_PLAYING ||
@@ -136,10 +148,27 @@ object MediaWatch {
   private fun trigger(controller: MediaController) {
     val now = SystemClock.elapsedRealtime()
     if (now - lastTriggerAt < DEBOUNCE_MS) return
+    if (!phonePutAway()) {
+      // Someone is using the phone, so this is them starting music, not a gesture.
+      if (now - lastIgnoredAt > DEBOUNCE_MS) {
+        lastIgnoredAt = now
+        Engine.log("Media: started with the phone in use, not treated as a gesture")
+      }
+      return
+    }
     lastTriggerAt = now
+    silenceUntil = now + SILENCE_MS
     // The music was only a signal; nobody wants to hear it.
     runCatching { controller.transportControls.pause() }
     Engine.toggleFromGesture()
+  }
+
+  /** Locked or screen off: the phone is in a pocket, not in a hand. */
+  private fun phonePutAway(): Boolean {
+    val context = appContext ?: return false
+    val power = context.getSystemService(PowerManager::class.java)
+    val keyguard = context.getSystemService(KeyguardManager::class.java)
+    return !power.isInteractive || keyguard.isKeyguardLocked
   }
 
   private fun stateName(state: PlaybackState?): String =

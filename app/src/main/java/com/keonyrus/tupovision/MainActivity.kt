@@ -381,9 +381,10 @@ private fun SettingsSection(state: UiState, onNotificationAccess: () -> Unit) {
     SettingSwitch(
         title = "Standby (experimental)",
         subtitle =
-            "Start and stop from the glasses. In Meta AI, assign Tap and hold to Music with a " +
-                "music app you do not otherwise use. When that app is asked to play, this " +
-                "app pauses it and toggles the conversation.",
+            "Start and stop from the glasses. In Meta AI, assign Tap and hold to Music. " +
+                "When the music app starts while the phone is locked or its screen is off, " +
+                "this app pauses it and toggles the conversation. Music you start with the " +
+                "phone in your hand is left alone.",
         checked = state.standby,
         enabled = true,
         onChange = { Engine.setStandby(it) },
@@ -401,7 +402,7 @@ private fun SettingsSection(state: UiState, onNotificationAccess: () -> Unit) {
         value = state.triggerPackage,
         onValueChange = { Engine.setTriggerPackage(it.trim()) },
         label = { Text("Standby music app (package)") },
-        supportingText = { Text("Amazon Music is com.amazon.mp3. Change with standby off.") },
+        supportingText = { Text("Spotify is com.spotify.music. Change with standby off.") },
         singleLine = true,
         enabled = !state.standby,
         modifier = Modifier.fillMaxWidth(),
