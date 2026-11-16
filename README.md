@@ -16,8 +16,11 @@ Built and tested on Ray-Ban Meta Gen 1. Meta's Wearables Device Access Toolkit, 
 on, also covers Ray-Ban Meta Gen 2, Oakley Meta and Meta Ray-Ban Display; those are untested
 here. Not affiliated with Meta, OpenAI or Google.
 
-> **Status: a personal project.** Built for one pair of Ray-Ban Meta Gen 1 and one Android phone.
-> It works there; expect rough edges elsewhere. Bug reports with the in-app log are welcome.
+> **Status: a personal project, no support.** I made this for myself: one pair of Ray-Ban Meta
+> Gen 1 and one Android phone. It works there; expect rough edges elsewhere. All the code was
+> written by Claude Fable 5.2 (Anthropic); I said what I wanted and tested it on my glasses. I do
+> not plan to maintain it and may not answer issues. It is MIT licensed, so fork it and do what
+> you want.
 
 ## What you need
 
@@ -91,7 +94,8 @@ speech on the phone. The real ChatGPT voice mode is not available to other apps 
 - **Taps on the glasses no longer control music.** Seen on Ray-Ban Meta Gen 1: while Tupo Vision
   is open, play/pause and skip taps on the temple do nothing. Close the app (swipe it away from
   recent apps) and they work again.
-- **Anything else:** scroll down, tap **Copy log**, and attach it to an issue.
+- **Anything else:** scroll down and tap **Copy log**; the log usually says what went wrong. You
+  can attach it to an issue, but see the status note at the top: there may be no answer.
 
 ## Privacy and security
 
