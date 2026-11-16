@@ -90,8 +90,6 @@ data class UiState(
     val liveMode: Boolean = false,
     val geminiKeySet: Boolean = false,
     val bargeIn: Boolean = true,
-    /** A gesture on the glasses starts and stops the conversation. Not kept across restarts. */
-    val standby: Boolean = false,
     val log: List<String> = emptyList(),
 )
 
@@ -376,49 +374,6 @@ object Engine {
     log("Gemini key deleted")
   }
 
-  /**
-   * Must be switched on from the screen: the background service has to start while the app is
-   * visible to be allowed to use the microphone later, when a gesture starts the conversation.
-   */
-  fun setStandby(value: Boolean) {
-    if (value == _state.value.standby) return
-    if (value) {
-      if (!wearablesReady) {
-        fail("Grant the Bluetooth and microphone permissions first")
-        return
-      }
-      try {
-        KeepAliveService.start(app)
-        serviceStarted = true
-      } catch (e: Exception) {
-        fail("Could not start standby: ${e.message}")
-        return
-      }
-      Standby.enable(app)
-      update { it.copy(standby = true) }
-      log("Standby on: triple tap on the temple starts and stops the conversation")
-    } else {
-      Standby.disable()
-      update { it.copy(standby = false) }
-      if (!_state.value.running && serviceStarted) {
-        KeepAliveService.stop(app)
-        serviceStarted = false
-      }
-      log("Standby off")
-    }
-  }
-
-  /** Called when the standby gesture arrives from the glasses. */
-  fun toggleFromGesture() {
-    if (_state.value.running) {
-      Standby.beep(starting = false)
-      stop()
-    } else {
-      Standby.beep(starting = true)
-      start(null)
-    }
-  }
-
   fun clearError() {
     update { it.copy(error = null) }
   }
@@ -429,10 +384,9 @@ object Engine {
 
   /**
    * Starts the conversation. [requestPermission] opens the Meta AI app to ask for camera access,
-   * which needs the activity, so the screen passes it in. A start from a gesture has no screen
-   * and passes null; camera access must already have been granted then.
+   * which needs the activity, so the screen passes it in.
    */
-  fun start(requestPermission: (suspend (Permission) -> PermissionStatus)?) {
+  fun start(requestPermission: suspend (Permission) -> PermissionStatus) {
     if (_state.value.running) return
     if (_state.value.liveMode && !_state.value.geminiKeySet) {
       fail("Save a Gemini API key first")
@@ -452,23 +406,17 @@ object Engine {
       Wearables.checkPermissionStatus(Permission.CAMERA)
           .onSuccess { status -> granted = status == PermissionStatus.Granted }
           .onFailure { error, _ -> log("Camera permission check: ${error.description}") }
-      if (!granted && requestPermission != null) {
+      if (!granted) {
         granted = requestPermission(Permission.CAMERA) == PermissionStatus.Granted
       }
       if (!_state.value.running) return@launch
       if (!granted) {
-        fail(
-            if (requestPermission == null) {
-              "No camera access yet. Start once from the app so Meta AI can ask for it."
-            } else {
-              "Meta AI did not grant access to the glasses camera"
-            },
-        )
+        fail("Meta AI did not grant access to the glasses camera")
         shutdown()
         return@launch
       }
       try {
-        if (!serviceStarted) KeepAliveService.start(app)
+        KeepAliveService.start(app)
         serviceStarted = true
       } catch (e: Exception) {
         log("Could not start background mode: ${e.message}")
@@ -615,8 +563,7 @@ object Engine {
     streaming = false
     history.clear()
     Frames.reset()
-    // In standby the service stays up, waiting for the next gesture.
-    if (serviceStarted && !_state.value.standby) {
+    if (serviceStarted) {
       KeepAliveService.stop(app)
       serviceStarted = false
     }

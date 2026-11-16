@@ -372,16 +372,6 @@ private fun SettingsSection(state: UiState) {
         style = MaterialTheme.typography.bodySmall,
     )
     SettingSwitch(
-        title = "Standby (experimental)",
-        subtitle =
-            "Triple tap on the temple starts and stops the conversation, phone in your " +
-                "pocket. Every button the glasses send shows up in the log. Starting music " +
-                "in another app takes the buttons away until you switch this on again.",
-        checked = state.standby,
-        enabled = true,
-        onChange = { Engine.setStandby(it) },
-    )
-    SettingSwitch(
         title = "Glasses microphone",
         subtitle = "Turn off if the glasses hear worse than the phone. The phone listens then.",
         checked = state.glassesMic,
