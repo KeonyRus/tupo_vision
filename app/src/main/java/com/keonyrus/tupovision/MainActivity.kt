@@ -384,7 +384,9 @@ private fun SettingsSection(state: UiState, onNotificationAccess: () -> Unit) {
             "Start and stop from the glasses. In Meta AI, assign Tap and hold to Music. " +
                 "When the music app starts while the phone is locked or its screen is off, " +
                 "this app pauses it and toggles the conversation. Music you start with the " +
-                "phone in your hand is left alone.",
+                "phone in your hand, or that plays through a car or other headphones, is " +
+                "left alone. Switch on with the glasses on." +
+                if (state.standbyAudio.isNotEmpty()) "\nFollowing: ${state.standbyAudio}" else "",
         checked = state.standby,
         enabled = true,
         onChange = { Engine.setStandby(it) },

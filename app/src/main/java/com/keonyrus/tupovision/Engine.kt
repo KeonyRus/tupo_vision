@@ -92,6 +92,7 @@ data class UiState(
     val bargeIn: Boolean = true,
     /** A gesture on the glasses starts and stops the conversation. Not kept across restarts. */
     val standby: Boolean = false,
+    val standbyAudio: String = "",
     /** Whether the user has granted the access needed to watch other apps' media sessions. */
     val mediaAccess: Boolean = false,
     val triggerPackage: String = MediaWatch.DEFAULT_TRIGGER,
@@ -400,7 +401,7 @@ object Engine {
     if (value == _state.value.standby) return
     if (!value) {
       MediaWatch.stop()
-      update { it.copy(standby = false) }
+      update { it.copy(standby = false, standbyAudio = "") }
       if (!_state.value.running && serviceStarted) {
         KeepAliveService.stop(app)
         serviceStarted = false
@@ -412,7 +413,13 @@ object Engine {
       fail("Grant the Bluetooth and microphone permissions first")
       return
     }
-    if (!MediaWatch.start(app, _state.value.triggerPackage.trim())) {
+    // Standby follows one audio device, so a car or other headphones cannot set it off.
+    val glasses = MediaWatch.bluetoothOutputs(app).firstOrNull()
+    if (glasses == null) {
+      fail("Put the glasses on first: standby follows the Bluetooth audio device in use now")
+      return
+    }
+    if (!MediaWatch.start(app, _state.value.triggerPackage.trim(), glasses)) {
       fail("Standby needs notification access. Grant it with the button under the switch.")
       return
     }
@@ -424,8 +431,8 @@ object Engine {
       fail("Could not start standby: ${e.message}")
       return
     }
-    update { it.copy(standby = true) }
-    log("Standby on, watching ${_state.value.triggerPackage.trim()}")
+    update { it.copy(standby = true, standbyAudio = glasses) }
+    log("Standby on, watching ${_state.value.triggerPackage.trim()} while music goes to $glasses")
   }
 
   /** Called when the standby gesture arrives from the glasses. */

@@ -3,7 +3,9 @@ package com.keonyrus.tupovision
 import android.app.KeyguardManager
 import android.content.ComponentName
 import android.content.Context
+import android.media.AudioDeviceInfo
 import android.media.AudioManager
+import android.media.MediaRouter
 import android.media.ToneGenerator
 import android.media.session.MediaController
 import android.media.session.MediaSession
@@ -31,6 +33,10 @@ class MediaWatchService : NotificationListenerService()
  * it is paused and the conversation toggles. Starting music by hand, with the phone in use, is
  * left alone, so the music app stays usable for music.
  *
+ * Android does not say who asked the music app to play. A car, a watch or other headphones can
+ * start it with the phone locked just as well, so a start also counts only while music goes to
+ * the glasses: the Bluetooth audio device that was in use when standby was switched on.
+ *
  * Every media session change is logged as package and state, never titles.
  */
 object MediaWatch {
@@ -49,6 +55,9 @@ object MediaWatch {
   // The music app may start playing a moment after the gesture was handled; keep it quiet.
   private var silenceUntil = 0L
   private var appContext: Context? = null
+  // The glasses as Android's two audio APIs name them; the two names can differ.
+  private var glassesOutput = ""
+  private var glassesRoute: String? = null
   private val watched = HashMap<MediaSession.Token, Pair<MediaController, MediaController.Callback>>()
   // A music app reports the same state many times over; the log keeps only the changes.
   private val lastLogged = HashMap<String, Int>()
@@ -70,9 +79,47 @@ object MediaWatch {
     }
   }
 
-  /** Call on the main thread. Returns false when notification access is missing. */
-  fun start(context: Context, trigger: String): Boolean {
+  /** Bluetooth devices that music can play through right now, by name. */
+  fun bluetoothOutputs(context: Context): List<String> {
+    val audio = context.getSystemService(AudioManager::class.java)
+    return runCatching {
+          audio
+              .getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+              .filter {
+                it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                    it.type == AudioDeviceInfo.TYPE_BLE_HEADSET ||
+                    it.type == AudioDeviceInfo.TYPE_BLE_SPEAKER
+              }
+              .map { it.productName?.toString().orEmpty() }
+              .filter { it.isNotBlank() }
+              .distinct()
+        }
+        .getOrDefault(emptyList())
+  }
+
+  /** The Bluetooth device Android has selected for music, or null when it is not Bluetooth. */
+  private fun bluetoothRoute(context: Context): String? =
+      runCatching {
+            val route =
+                context
+                    .getSystemService(MediaRouter::class.java)
+                    .getSelectedRoute(MediaRouter.ROUTE_TYPE_LIVE_AUDIO)
+            if (route.deviceType == MediaRouter.RouteInfo.DEVICE_TYPE_BLUETOOTH) {
+              route.name?.toString()
+            } else {
+              null
+            }
+          }
+          .getOrNull()
+
+  /**
+   * Call on the main thread, with the glasses on. [glasses] is the Bluetooth audio device to
+   * follow, one of [bluetoothOutputs]. Returns false when notification access is missing.
+   */
+  fun start(context: Context, trigger: String, glasses: String): Boolean {
     if (manager != null) return true
+    glassesOutput = glasses
+    glassesRoute = bluetoothRoute(context)
     val sessions = context.getSystemService(MediaSessionManager::class.java)
     val listener = ComponentName(context, MediaWatchService::class.java)
     return try {
@@ -159,6 +206,21 @@ object MediaWatch {
       if (now - lastIgnoredAt > DEBOUNCE_MS) {
         lastIgnoredAt = now
         Engine.log("Media: started with the phone in use, not treated as a gesture")
+      }
+      return
+    }
+    val context = appContext ?: return
+    val outputs = bluetoothOutputs(context)
+    val route = bluetoothRoute(context)
+    val expectedRoute = glassesRoute
+    val elsewhere =
+        glassesOutput !in outputs || (route != null && expectedRoute != null && route != expectedRoute)
+    if (elsewhere) {
+      // A car or other headphones: whoever started the music, it was not meant for the glasses.
+      if (now - lastIgnoredAt > DEBOUNCE_MS) {
+        lastIgnoredAt = now
+        val where = route ?: outputs.firstOrNull() ?: "the phone"
+        Engine.log("Media: music goes to $where, not to $glassesOutput; not treated as a gesture")
       }
       return
     }

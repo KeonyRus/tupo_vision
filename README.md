@@ -53,7 +53,9 @@ That is all. Next time, only step 6.
   to **Music** (Spotify is the default here). Switch on **Standby** in Tupo Vision and grant
   notification access. A tap and hold then makes the glasses start the music app; if the phone is
   locked or its screen is off, Tupo Vision pauses the music and toggles the conversation. Music
-  you start with the phone in your hand is left alone. Android gives an app the name of the
+  you start with the phone in your hand is left alone, and so is music that plays through a car
+  or other headphones: switch Standby on with the glasses on, and it follows that audio device
+  only. Android gives an app the name of the
   playing music app only with notification access; Tupo Vision reads no notifications.
 - **ChatGPT mode** listens for a phrase, sends it with one camera frame, and reads the answer
   aloud. Set your **Speech language** in Settings (for example `en-US` or `ru-RU`). An optional
