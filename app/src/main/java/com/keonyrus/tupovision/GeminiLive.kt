@@ -390,13 +390,25 @@ class GeminiLive(
     val head = "{\"realtimeInput\":{\"video\":{\"mimeType\":\"image/jpeg\",\"data\":\""
     var lastFrame = -1L
     var sent = 0
+    var misses = 0
     while (!stopped) {
       Thread.sleep(FRAME_INTERVAL_MS)
       if (!ready) continue
       // Nothing new from the glasses, nothing to send.
       val current = Frames.count
-      if (current == lastFrame) continue
-      val jpeg = frameSource() ?: continue
+      if (current == lastFrame) {
+        misses += 1
+        if (misses == 8 && sent == 0) events.onLog("Видео с очков не приходит, модель пока не видит")
+        continue
+      }
+      val jpeg = frameSource()
+      if (jpeg == null) {
+        misses += 1
+        if (misses == 5 && sent == 0) {
+          events.onLog("Кадры приходят, но их формат не разобран (${Frames.info}), модель не видит")
+        }
+        continue
+      }
       lastFrame = current
       socket?.send(head + Base64.encodeToString(jpeg, Base64.NO_WRAP) + "\"}}}")
       if (sent % PREVIEW_EVERY == 0) events.onFrameSent(jpeg)
