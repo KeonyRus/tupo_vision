@@ -49,6 +49,9 @@ That is all. Next time, only step 6.
 
 - **Pause and resume:** one tap on the temple of the glasses.
 - **Stop:** the Stop button in the app.
+- **Standby (experimental):** switch it on in Settings and a triple tap on the temple starts and
+  stops the conversation without touching the phone. It relies on the glasses forwarding the
+  gesture to the phone as a media button, and stops working once another app plays music.
 - **ChatGPT mode** listens for a phrase, sends it with one camera frame, and reads the answer
   aloud. Set your **Speech language** in Settings (for example `en-US` or `ru-RU`). An optional
   wake word makes it ignore everything that does not contain that word.
@@ -125,7 +128,8 @@ Gemini Live mode
 
 - The app runs in Meta's Developer Mode. Publishing it to a store would need registration in
   Meta's Wearables Developer Center.
-- Starting a conversation needs the phone. Pausing and resuming does not.
+- Starting a conversation needs the phone, unless the experimental standby works on your
+  glasses. Pausing and resuming does not.
 - Sign in with ChatGPT for open-source apps is a preview, and its terms can change.
 - Glasses microphones reach the phone at phone-call quality over Bluetooth.
 

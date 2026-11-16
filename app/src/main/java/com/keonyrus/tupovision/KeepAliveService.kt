@@ -76,12 +76,11 @@ class KeepAliveService : Service() {
   private fun serviceTypes(): Int {
     val micGranted =
         checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-    return if (micGranted) {
-      ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
-          ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-    } else {
-      ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
-    }
+    // Media playback covers standby, where the service only holds a media session.
+    val base =
+        ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+    return if (micGranted) base or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else base
   }
 
   private fun buildNotification(): Notification {
@@ -100,8 +99,8 @@ class KeepAliveService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
     return Notification.Builder(this, CHANNEL_ID)
-        .setContentTitle("Tupo Vision is listening")
-        .setContentText("The glasses camera and microphone are in use")
+        .setContentTitle("Tupo Vision is running")
+        .setContentText("In a conversation, or on standby for a gesture")
         .setSmallIcon(R.drawable.ic_stat)
         .setOngoing(true)
         .setContentIntent(open)
