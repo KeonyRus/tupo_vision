@@ -7,6 +7,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -106,6 +107,7 @@ class MainActivity : ComponentActivity() {
               onSignIn = { Engine.signIn(this) },
               onStart = { Engine.start(::requestWearablesPermission) },
               onCopyLog = ::copyLog,
+              onNotificationAccess = ::openNotificationAccess,
           )
         }
       }
@@ -135,6 +137,10 @@ class MainActivity : ComponentActivity() {
     }
   }
 
+  private fun openNotificationAccess() {
+    runCatching { startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)) }
+  }
+
   private fun copyLog() {
     val clipboard = getSystemService(ClipboardManager::class.java)
     clipboard.setPrimaryClip(ClipData.newPlainText("Tupo Vision log", Engine.logText()))
@@ -151,6 +157,7 @@ private fun Screen(
     onSignIn: () -> Unit,
     onStart: () -> Unit,
     onCopyLog: () -> Unit,
+    onNotificationAccess: () -> Unit,
 ) {
   Column(
       modifier =
@@ -176,7 +183,7 @@ private fun Screen(
     GlassesSection(state, onGrantPermissions, onInstallMetaAi, onRegister, onUnregister)
     AssistantSection(state)
     if (!state.liveMode) ChatGptSection(state, onSignIn)
-    SettingsSection(state)
+    SettingsSection(state, onNotificationAccess)
     LogSection(state, onCopyLog)
   }
 }
@@ -365,11 +372,39 @@ private fun ChatGptSection(state: UiState, onSignIn: () -> Unit) {
 }
 
 @Composable
-private fun SettingsSection(state: UiState) {
+private fun SettingsSection(state: UiState, onNotificationAccess: () -> Unit) {
   Section("Settings") {
     Text(
         "Change these while the conversation is stopped; they apply from the next start.",
         style = MaterialTheme.typography.bodySmall,
+    )
+    SettingSwitch(
+        title = "Standby (experimental)",
+        subtitle =
+            "Start and stop from the glasses. In Meta AI, assign Tap and hold to Music with a " +
+                "music app you do not otherwise use. When that app is asked to play, this " +
+                "app pauses it and toggles the conversation.",
+        checked = state.standby,
+        enabled = true,
+        onChange = { Engine.setStandby(it) },
+    )
+    if (!state.mediaAccess) {
+      OutlinedButton(onClick = onNotificationAccess) { Text("Grant notification access") }
+      Text(
+          "Android only lets an app see which music app is playing with this access. Tupo " +
+              "Vision reads no notifications. If the switch there is greyed out, open " +
+              "Android Settings → Apps → Tupo Vision → ⋮ → Allow restricted settings first.",
+          style = MaterialTheme.typography.bodySmall,
+      )
+    }
+    OutlinedTextField(
+        value = state.triggerPackage,
+        onValueChange = { Engine.setTriggerPackage(it.trim()) },
+        label = { Text("Standby music app (package)") },
+        supportingText = { Text("Amazon Music is com.amazon.mp3. Change with standby off.") },
+        singleLine = true,
+        enabled = !state.standby,
+        modifier = Modifier.fillMaxWidth(),
     )
     SettingSwitch(
         title = "Glasses microphone",

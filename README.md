@@ -49,6 +49,11 @@ That is all. Next time, only step 6.
 
 - **Pause and resume:** one tap on the temple of the glasses.
 - **Stop:** the Stop button in the app.
+- **Standby (experimental):** start and stop from the glasses. In Meta AI, assign **Tap and hold**
+  to **Music** with a music app you do not otherwise listen to (Amazon Music by default). Switch
+  on **Standby** in Tupo Vision and grant notification access. A tap and hold then asks that app
+  to play; Tupo Vision pauses it and toggles the conversation. Android gives an app the name of
+  the playing music app only with notification access; Tupo Vision reads no notifications.
 - **ChatGPT mode** listens for a phrase, sends it with one camera frame, and reads the answer
   aloud. Set your **Speech language** in Settings (for example `en-US` or `ru-RU`). An optional
   wake word makes it ignore everything that does not contain that word.

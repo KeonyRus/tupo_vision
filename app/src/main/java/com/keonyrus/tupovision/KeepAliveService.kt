@@ -100,8 +100,8 @@ class KeepAliveService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
     return Notification.Builder(this, CHANNEL_ID)
-        .setContentTitle("Tupo Vision is listening")
-        .setContentText("The glasses camera and microphone are in use")
+        .setContentTitle("Tupo Vision is running")
+        .setContentText("In a conversation, or on standby for a gesture")
         .setSmallIcon(R.drawable.ic_stat)
         .setOngoing(true)
         .setContentIntent(open)
