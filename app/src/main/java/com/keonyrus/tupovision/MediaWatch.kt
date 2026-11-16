@@ -50,6 +50,8 @@ object MediaWatch {
   private var silenceUntil = 0L
   private var appContext: Context? = null
   private val watched = HashMap<MediaSession.Token, Pair<MediaController, MediaController.Callback>>()
+  // A music app reports the same state many times over; the log keeps only the changes.
+  private val lastLogged = HashMap<String, Int>()
 
   private val sessionsListener =
       MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
@@ -81,6 +83,7 @@ object MediaWatch {
       triggerPackage = trigger.ifBlank { DEFAULT_TRIGGER }
       // Sessions that already exist are the baseline, not a gesture.
       armed = false
+      lastLogged.clear()
       onSessions(sessions.getActiveSessions(listener))
       armed = true
       true
@@ -130,7 +133,10 @@ object MediaWatch {
 
   private fun onState(controller: MediaController, state: PlaybackState?) {
     if (!armed) return
-    Engine.log("Media: ${controller.packageName} is ${stateName(state)}")
+    val code = state?.state ?: -1
+    if (lastLogged.put(controller.packageName, code) != code) {
+      Engine.log("Media: ${controller.packageName} is ${stateName(state)}")
+    }
     if (controller.packageName != triggerPackage || state == null) return
     if (state.state == PlaybackState.STATE_PLAYING && SystemClock.elapsedRealtime() < silenceUntil) {
       runCatching { controller.transportControls.pause() }

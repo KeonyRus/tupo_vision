@@ -472,16 +472,21 @@ object Engine {
     scope.launch {
       var granted = false
       Wearables.checkPermissionStatus(Permission.CAMERA)
-          .onSuccess { status -> granted = status == PermissionStatus.Granted }
+          .onSuccess { status ->
+            granted = status == PermissionStatus.Granted
+            // A start from the glasses cannot ask, so the answer itself is worth seeing.
+            if (requestPermission == null) log("Gesture: Meta AI reports camera access as $status")
+          }
           .onFailure { error, _ -> log("Camera permission check: ${error.description}") }
       if (!granted && requestPermission != null) {
         granted = requestPermission(Permission.CAMERA) == PermissionStatus.Granted
       }
       if (!_state.value.running) return@launch
       if (!granted) {
+        if (requestPermission == null) MediaWatch.beep(starting = false)
         fail(
             if (requestPermission == null) {
-              "No camera access yet. Start once from the app so Meta AI can ask for it."
+              "No standing camera access. Start once from the app and pick Always allow in Meta AI."
             } else {
               "Meta AI did not grant access to the glasses camera"
             },
