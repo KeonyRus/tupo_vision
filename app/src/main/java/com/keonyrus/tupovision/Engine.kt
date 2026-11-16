@@ -86,6 +86,10 @@ data class UiState(
     val photoMode: Boolean = false,
     val wakeWord: String = "",
     val language: String = "ru-RU",
+    /** True: live voice through Gemini Live. False: ChatGPT plan with on-phone speech. */
+    val liveMode: Boolean = false,
+    val geminiKeySet: Boolean = false,
+    val bargeIn: Boolean = true,
     val log: List<String> = emptyList(),
 )
 
@@ -102,6 +106,9 @@ object Engine {
   private const val MAX_LOG = 200
   private const val PHOTO_TIMEOUT_MS = 3000L
   private const val STREAM_WAIT_MS = 10_000L
+  private const val GEMINI_KEY = "gemini_api_key"
+  // Lighter than the per-question frame: one of these goes up every second.
+  private const val LIVE_JPEG_QUALITY = 65
 
   val REQUIRED_PERMISSIONS: Array<String> =
       arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.RECORD_AUDIO)
@@ -133,6 +140,14 @@ object Engine {
   private var errorStreak = 0
   private val history = ArrayDeque<Turn>()
 
+  // Live voice
+  private var live: GeminiLive? = null
+  private var liveHandle: String? = null
+  // 0: full setup resuming the last session, 1: full setup from scratch, 2: bare minimum.
+  private var liveAttempt = 0
+  private var liveDrops = 0
+  private var liveTurnDone = true
+
   // ---- setup ----
 
   fun attach(application: Application) {
@@ -146,6 +161,9 @@ object Engine {
           photoMode = prefs.getBoolean("photo_mode", false),
           wakeWord = prefs.getString("wake_word", "") ?: "",
           language = prefs.getString("language", "ru-RU") ?: "ru-RU",
+          geminiKeySet = SecureStore.get(app, GEMINI_KEY) != null,
+          liveMode = prefs.getBoolean("live_mode", false),
+          bargeIn = prefs.getBoolean("barge_in", true),
       )
     }
     refreshEnvironment()
@@ -328,6 +346,34 @@ object Engine {
     prefs().edit().putString("language", value).apply()
   }
 
+  fun setLiveMode(value: Boolean) {
+    update { it.copy(liveMode = value) }
+    prefs().edit().putBoolean("live_mode", value).apply()
+  }
+
+  fun setBargeIn(value: Boolean) {
+    update { it.copy(bargeIn = value) }
+    prefs().edit().putBoolean("barge_in", value).apply()
+  }
+
+  /** The key stays on this phone, encrypted; it is only ever sent to Google. */
+  fun setGeminiKey(value: String) {
+    val key = value.trim()
+    if (key.isEmpty()) return
+    SecureStore.put(app, GEMINI_KEY, key)
+    update { it.copy(geminiKeySet = true) }
+    setLiveMode(true)
+    log("Ключ Gemini сохранён, включён живой голос")
+  }
+
+  fun clearGeminiKey() {
+    if (_state.value.running && _state.value.liveMode) stop()
+    SecureStore.put(app, GEMINI_KEY, null)
+    update { it.copy(geminiKeySet = false) }
+    setLiveMode(false)
+    log("Ключ Gemini удалён")
+  }
+
   fun clearError() {
     update { it.copy(error = null) }
   }
@@ -342,7 +388,11 @@ object Engine {
    */
   fun start(requestPermission: suspend (Permission) -> PermissionStatus) {
     if (_state.value.running) return
-    if (!_state.value.signedIn) {
+    if (_state.value.liveMode && !_state.value.geminiKeySet) {
+      fail("Сначала сохрани ключ Gemini")
+      return
+    }
+    if (!_state.value.liveMode && !_state.value.signedIn) {
       fail("Сначала войди в ChatGPT")
       return
     }
@@ -495,6 +545,12 @@ object Engine {
     stt?.destroy()
     stt = null
     tts?.stop()
+    live?.stop()
+    live = null
+    liveHandle = null
+    liveAttempt = 0
+    liveDrops = 0
+    liveTurnDone = true
     AudioRouter.disable(app)
     sessionJobs.forEach { it.cancel() }
     sessionJobs.clear()
@@ -527,6 +583,10 @@ object Engine {
   private fun startVoice() {
     if (voiceActive) return
     voiceActive = true
+    if (_state.value.liveMode) {
+      startLive()
+      return
+    }
     scope.launch {
       val settings = _state.value
       val routed = settings.glassesMic && AudioRouter.enable(app)
@@ -558,6 +618,10 @@ object Engine {
     turnJob = null
     stt?.cancel()
     tts?.stop()
+    // The live session is closed too; its handle lets the next one pick the conversation up.
+    live?.stop()
+    live = null
+    liveAttempt = 0
     // Free the hands-free link so music can play through the glasses while paused.
     AudioRouter.disable(app)
     log(reason)
@@ -792,6 +856,168 @@ object Engine {
 
   private fun cleanForSpeech(text: String): String =
       text.replace(Regex("[*#`_>|]"), "").replace(Regex("\\s+"), " ").trim()
+
+  // ---- conversation: live voice ----
+
+  private fun startLive() {
+    scope.launch {
+      val key = SecureStore.get(app, GEMINI_KEY)
+      if (key == null) {
+        fail("Нет ключа Gemini")
+        shutdown()
+        return@launch
+      }
+      val wantGlasses = _state.value.glassesMic
+      val onGlasses = AudioRouter.enableCall(app, wantGlasses)
+      if (wantGlasses && !onGlasses) {
+        log("Звук очков по Bluetooth недоступен, говорю через телефон")
+      }
+      if (voiceActive) connectLive(key)
+    }
+  }
+
+  private fun connectLive(key: String) {
+    live?.stop()
+    val events = LiveEvents()
+    val session =
+        GeminiLive(
+            apiKey = key,
+            instructions = liveInstructions(),
+            resumeHandle = if (liveAttempt == 0) liveHandle else null,
+            fullSetup = liveAttempt < 2,
+            bargeIn = _state.value.bargeIn,
+            inputDevice = AudioRouter.inputDevice(app),
+            callAudio = AudioRouter.isRouted,
+            frameSource = { Frames.latestJpeg(LIVE_JPEG_QUALITY) },
+            events = events,
+        )
+    events.owner = session
+    live = session
+    update { it.copy(phase = Phase.CONNECTING, partial = "") }
+    session.start()
+  }
+
+  /** Session callbacks come from background threads; each is replayed on the main thread. */
+  private class LiveEvents : GeminiLive.Events {
+    var owner: GeminiLive? = null
+
+    /** Drops callbacks from a session that has since been replaced or stopped. */
+    private fun onMain(block: () -> Unit) {
+      scope.launch { if (live === owner && voiceActive) block() }
+    }
+
+    override fun onReady() = onMain {
+      liveDrops = 0
+      liveTurnDone = true
+      log(if (liveAttempt < 2) "Gemini Live на связи" else "Gemini Live на связи, упрощённый режим")
+      update { it.copy(phase = Phase.LISTENING, error = null) }
+    }
+
+    override fun onUserText(delta: String) = onMain {
+      if (liveTurnDone) {
+        liveTurnDone = false
+        update { it.copy(question = delta, answer = "") }
+      } else {
+        update { it.copy(question = it.question + delta) }
+      }
+    }
+
+    override fun onModelText(delta: String) = onMain {
+      if (liveTurnDone) {
+        liveTurnDone = false
+        update { it.copy(question = "", answer = delta) }
+      } else {
+        update { it.copy(answer = it.answer + delta) }
+      }
+    }
+
+    override fun onModelSpeaking(speaking: Boolean) = onMain {
+      update { it.copy(phase = if (speaking) Phase.SPEAKING else Phase.LISTENING) }
+    }
+
+    override fun onTurnComplete() = onMain { liveTurnDone = true }
+
+    override fun onResumeHandle(handle: String) = onMain { liveHandle = handle }
+
+    override fun onGoAway() = onMain {
+      // The server ends every connection after about ten minutes and says so in advance.
+      val key = SecureStore.get(app, GEMINI_KEY)
+      if (key != null) {
+        log("Gemini переносит разговор на новое соединение")
+        liveAttempt = 0
+        connectLive(key)
+      }
+    }
+
+    override fun onFrameSent(jpeg: ByteArray) {
+      val preview = Frames.preview(jpeg)
+      onMain { update { it.copy(frame = preview, frameInfo = Frames.info) } }
+    }
+
+    override fun onClosed(reason: String, wasReady: Boolean) = onMain {
+      val key = SecureStore.get(app, GEMINI_KEY)
+      if (key == null) {
+        shutdown()
+        return@onMain
+      }
+      val badKey =
+          reason.contains("API key", ignoreCase = true) ||
+              reason.contains("HTTP 401") ||
+              reason.contains("HTTP 403")
+      val outOfQuota =
+          reason.contains("quota", ignoreCase = true) ||
+              reason.contains("RESOURCE_EXHAUSTED") ||
+              reason.contains("HTTP 429")
+      when {
+        badKey -> {
+          fail("Gemini не принял ключ: $reason")
+          shutdown()
+        }
+        outOfQuota -> {
+          fail("Лимит Gemini исчерпан: $reason")
+          shutdown()
+        }
+        // Refused before the session opened: retry with fewer options each time.
+        !wasReady -> {
+          liveAttempt += 1
+          if (liveAttempt > 2) {
+            fail("Gemini отклонил подключение: $reason")
+            shutdown()
+          } else {
+            log("Gemini закрыл подключение ($reason), пробую с меньшим набором настроек")
+            connectLive(key)
+          }
+        }
+        else -> {
+          liveDrops += 1
+          if (liveDrops > 5) {
+            fail("Связь с Gemini рвётся: $reason")
+            shutdown()
+          } else {
+            log("Связь с Gemini оборвалась ($reason), переподключаюсь")
+            liveAttempt = 0
+            val dropped = owner
+            scope.launch {
+              delay(400L * liveDrops)
+              if (voiceActive && live === dropped) connectLive(key)
+            }
+          }
+        }
+      }
+    }
+
+    override fun onLog(message: String) {
+      log(message)
+    }
+  }
+
+  private fun liveInstructions(): String =
+      "Ты голосовой ассистент в умных очках. Ты слышишь пользователя и видишь видео с камеры " +
+          "его очков: это то, что у него перед глазами прямо сейчас. Говори естественно и " +
+          "коротко, как живой собеседник: одна-три фразы, если не просят подробнее. Отвечай на " +
+          "языке, на котором к тебе обращаются, по умолчанию по-русски. Опирайся на видео, " +
+          "когда спрашивают про то, что видно, и не описывай его без просьбы. Если нужного не " +
+          "видно или не разобрать, так и скажи. Отвечай только на речь, обращённую к тебе."
 
   // ---- plumbing ----
 

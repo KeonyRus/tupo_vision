@@ -59,6 +59,7 @@ dependencies {
   implementation(libs.androidx.lifecycle.runtime.compose)
   implementation(libs.androidx.browser)
   implementation(libs.kotlinx.coroutines.android)
+  implementation(libs.okhttp)
   implementation(libs.mwdat.core)
   implementation(libs.mwdat.camera)
 }

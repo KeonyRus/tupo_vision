@@ -169,8 +169,46 @@ object AudioRouter {
   // Identity of the running keep-alive loop; a loop stops when it is no longer the current one.
   @Volatile private var keepAliveToken: Any? = null
 
+  private var onHeadset = false
+
   val isRouted: Boolean
     get() = routed
+
+  /**
+   * Call-style audio for a live two-way conversation. Uses the glasses when [preferHeadset] is set
+   * and they are connected, otherwise the phone's own microphone and loudspeaker. Call mode is
+   * what switches on Android's echo cancellation, so it is set in both cases. Returns true when
+   * the glasses carry the audio.
+   */
+  suspend fun enableCall(context: Context, preferHeadset: Boolean): Boolean {
+    if (preferHeadset && enable(context)) return true
+    if (routed) disable(context)
+    val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    previousMode = audio.mode
+    routed = true
+    runCatching {
+      audio.mode = AudioManager.MODE_IN_COMMUNICATION
+      // Without this, call mode plays through the quiet earpiece.
+      audio.availableCommunicationDevices
+          .firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+          ?.let { audio.setCommunicationDevice(it) }
+    }
+    startKeepAlive()
+    return false
+  }
+
+  /** The glasses microphone as a recording device, or null when audio is on the phone. */
+  fun inputDevice(context: Context): AudioDeviceInfo? {
+    if (!onHeadset) return null
+    val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    return runCatching {
+          audio.getDevices(AudioManager.GET_DEVICES_INPUTS).firstOrNull {
+            it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                it.type == AudioDeviceInfo.TYPE_BLE_HEADSET
+          }
+        }
+        .getOrNull()
+  }
 
   /** Returns true when microphone and speaker are now on a Bluetooth headset. */
   suspend fun enable(context: Context): Boolean {
@@ -200,6 +238,7 @@ object AudioRouter {
               true
             } == true
     if (!connected) disable(context)
+    onHeadset = connected
     return connected
   }
 
@@ -210,6 +249,7 @@ object AudioRouter {
     runCatching { audio.clearCommunicationDevice() }
     runCatching { audio.mode = previousMode }
     routed = false
+    onHeadset = false
   }
 
   /**

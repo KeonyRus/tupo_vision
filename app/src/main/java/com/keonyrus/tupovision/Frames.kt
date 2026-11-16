@@ -72,7 +72,7 @@ object Frames {
    * The newest video frame as JPEG, or null when there is none or its layout is not the planar
    * YUV 4:2:0 this code understands (then the caller falls back to a photo).
    */
-  fun latestJpeg(): ByteArray? {
+  fun latestJpeg(quality: Int = JPEG_QUALITY): ByteArray? {
     var copy: ByteArray? = null
     var w = 0
     var h = 0
@@ -86,10 +86,10 @@ object Frames {
       }
     }
     val bytes = copy ?: return null
-    return i420ToJpeg(bytes, w, h)
+    return i420ToJpeg(bytes, w, h, quality)
   }
 
-  private fun i420ToJpeg(i420: ByteArray, w: Int, h: Int): ByteArray? {
+  private fun i420ToJpeg(i420: ByteArray, w: Int, h: Int, quality: Int): ByteArray? {
     val ySize = w * h
     val chromaSize = ySize / 4
     // YuvImage wants NV21: the Y plane, then V and U interleaved.
@@ -105,7 +105,7 @@ object Frames {
     return try {
       val stream = ByteArrayOutputStream()
       YuvImage(nv21, ImageFormat.NV21, w, h, null)
-          .compressToJpeg(Rect(0, 0, w, h), JPEG_QUALITY, stream)
+          .compressToJpeg(Rect(0, 0, w, h), quality, stream)
       stream.toByteArray()
     } catch (e: Exception) {
       null

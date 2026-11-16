@@ -48,6 +48,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -171,7 +172,8 @@ private fun Screen(
 
     ConversationSection(state, onStart)
     GlassesSection(state, onGrantPermissions, onInstallMetaAi, onRegister, onUnregister)
-    ChatGptSection(state, onSignIn)
+    LiveSection(state)
+    if (!state.liveMode) ChatGptSection(state, onSignIn)
     SettingsSection(state)
     LogSection(state, onCopyLog)
   }
@@ -179,7 +181,8 @@ private fun Screen(
 
 @Composable
 private fun ConversationSection(state: UiState, onStart: () -> Unit) {
-  val ready = state.signedIn && state.registered && state.permissionsGranted
+  val brainReady = if (state.liveMode) state.geminiKeySet else state.signedIn
+  val ready = brainReady && state.registered && state.permissionsGranted
   Section("Разговор") {
     Button(
         onClick = { if (state.running) Engine.stop() else onStart() },
@@ -190,14 +193,17 @@ private fun ConversationSection(state: UiState, onStart: () -> Unit) {
     }
     if (!ready && !state.running) {
       Text(
-          "Сначала пройди шаги ниже: разрешения, привязка очков, вход в ChatGPT.",
+          "Сначала пройди шаги ниже: разрешения, привязка очков, " +
+              if (state.liveMode) "ключ Gemini." else "вход в ChatGPT.",
           style = MaterialTheme.typography.bodySmall,
       )
     }
     Text(state.phase.label, style = MaterialTheme.typography.titleMedium, color = Accent)
     if (state.partial.isNotEmpty()) Text("… ${state.partial}")
     if (state.question.isNotEmpty()) Text("Ты: ${state.question}")
-    if (state.answer.isNotEmpty()) Text("GPT: ${state.answer}")
+    if (state.answer.isNotEmpty()) {
+      Text((if (state.liveMode) "Gemini: " else "GPT: ") + state.answer)
+    }
     val latency = state.latencyMs
     if (latency != null) {
       Text(
@@ -207,7 +213,10 @@ private fun ConversationSection(state: UiState, onStart: () -> Unit) {
     }
     val frame = state.frame
     if (frame != null) {
-      Text("Кадр, который ушёл в ChatGPT:", style = MaterialTheme.typography.bodySmall)
+      Text(
+          if (state.liveMode) "Что сейчас видит модель:" else "Кадр, который ушёл в ChatGPT:",
+          style = MaterialTheme.typography.bodySmall,
+      )
       Image(
           bitmap = frame.asImageBitmap(),
           contentDescription = "Кадр с камеры очков",
@@ -266,8 +275,52 @@ private fun GlassesSection(
 }
 
 @Composable
+private fun LiveSection(state: UiState) {
+  Section("2. Мозг") {
+    SettingSwitch(
+        title = "Живой голос (Gemini Live)",
+        subtitle =
+            "Модель сама слышит и говорит, её можно перебивать, видео идёт постоянно. " +
+                "Нужен ключ Gemini. Выключено: GPT по подписке ChatGPT.",
+        checked = state.liveMode,
+        enabled = !state.running,
+        onChange = { Engine.setLiveMode(it) },
+    )
+    if (state.liveMode) {
+      StatusLine(state.geminiKeySet, "Ключ Gemini сохранён на телефоне")
+      if (state.geminiKeySet) {
+        TextButton(onClick = { Engine.clearGeminiKey() }) { Text("Удалить ключ") }
+      } else {
+        var draft by remember { mutableStateOf("") }
+        OutlinedTextField(
+            value = draft,
+            onValueChange = { draft = it },
+            label = { Text("Ключ из aistudio.google.com") },
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Button(
+            onClick = {
+              Engine.setGeminiKey(draft)
+              draft = ""
+            },
+            enabled = draft.isNotBlank(),
+        ) {
+          Text("Сохранить ключ")
+        }
+        Text(
+            "Ключ хранится только на этом телефоне в зашифрованном виде и уходит только в Google.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+      }
+    }
+  }
+}
+
+@Composable
 private fun ChatGptSection(state: UiState, onSignIn: () -> Unit) {
-  Section("2. ChatGPT") {
+  Section("ChatGPT") {
     StatusLine(state.signedIn, "Подписка ChatGPT подключена")
     if (state.signedIn) {
       var expanded by remember { mutableStateOf(false) }
@@ -321,15 +374,24 @@ private fun SettingsSection(state: UiState) {
         onChange = { Engine.setGlassesMic(it) },
     )
     SettingSwitch(
+        title = "Перебивать голосом",
+        subtitle =
+            "Для живого голоса. Выключи, если модель обрывает сама себя: " +
+                "тогда она не слушает, пока говорит.",
+        checked = state.bargeIn,
+        enabled = !state.running,
+        onChange = { Engine.setBargeIn(it) },
+    )
+    SettingSwitch(
         title = "Фото вместо видеокадра",
-        subtitle = "Чётче для мелкого текста, но медленнее.",
+        subtitle = "Для режима ChatGPT. Чётче для мелкого текста, но медленнее.",
         checked = state.photoMode,
         enabled = !state.running,
         onChange = { Engine.setPhotoMode(it) },
     )
     SettingSwitch(
         title = "Говорю по-английски",
-        subtitle = "Язык распознавания и озвучки. Выключено: русский.",
+        subtitle = "Для режима ChatGPT: язык распознавания и озвучки. Выключено: русский.",
         checked = state.language == "en-US",
         enabled = !state.running,
         onChange = { Engine.setLanguage(if (it) "en-US" else "ru-RU") },
@@ -338,7 +400,7 @@ private fun SettingsSection(state: UiState) {
         value = state.wakeWord,
         onValueChange = { Engine.setWakeWord(it) },
         label = { Text("Кодовое слово (необязательно)") },
-        supportingText = { Text("Если задано, отвечаю только на фразы с этим словом.") },
+        supportingText = { Text("Для режима ChatGPT: отвечаю только на фразы с этим словом.") },
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
     )
