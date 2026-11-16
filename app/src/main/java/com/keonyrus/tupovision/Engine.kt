@@ -214,7 +214,12 @@ object Engine {
     val job =
         scope.launch(start = CoroutineStart.LAZY) {
           try {
-            ChatGptAuth.login(app) { url -> openInBrowser(activity, url) }
+            ChatGptAuth.login(
+                context = app,
+                openBrowser = { url -> openInBrowser(activity, url) },
+                onCodeReceived = { bringToFront() },
+                log = { message -> log(message) },
+            )
             update { it.copy(signedIn = true) }
             log("ChatGPT подключён")
             bringToFront()
@@ -222,7 +227,17 @@ object Engine {
           } catch (e: CancellationException) {
             throw e
           } catch (e: Exception) {
-            fail("Вход в ChatGPT: ${e.message}")
+            val offline = e is java.net.UnknownHostException || e is java.net.ConnectException
+            if (offline) {
+              // Measured before returning to the screen, so it shows what the app saw.
+              log("Сеть глазами приложения: " + NetDiag.report(app))
+              fail(
+                  "Вход в ChatGPT: браузер вошёл, но само приложение не достучалось до " +
+                      "auth.openai.com. Подробности в журнале внизу.",
+              )
+            } else {
+              fail("Вход в ChatGPT: ${e.message}")
+            }
             bringToFront()
           } finally {
             if (loginJob === coroutineContext[Job]) update { it.copy(loginInProgress = false) }

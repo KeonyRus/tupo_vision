@@ -14,6 +14,7 @@ import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -40,6 +41,7 @@ object ChatGptAuth {
   private const val CALLBACK_PATH = "/auth/callback"
   private const val PREFERRED_PORT = 1455
   private const val LOGIN_TIMEOUT_MS = 5 * 60 * 1000L
+  private const val OFFLINE_RETRY_MS = 45 * 1000L
   // Refresh this long before expiry so a request never starts with a token about to die.
   private const val EXPIRY_MARGIN_MS = 3 * 60 * 1000L
 
@@ -66,9 +68,15 @@ object ChatGptAuth {
 
   /**
    * Runs the whole sign-in. [openBrowser] is called with the authorization URL once the local
-   * callback listener is up; the function returns when tokens are stored.
+   * callback listener is up, and [onCodeReceived] when the browser has come back with the code;
+   * the function returns when tokens are stored.
    */
-  suspend fun login(context: Context, openBrowser: (Uri) -> Unit) {
+  suspend fun login(
+      context: Context,
+      openBrowser: (Uri) -> Unit,
+      onCodeReceived: () -> Unit,
+      log: (String) -> Unit,
+  ) {
     val appContext = context.applicationContext
     val verifier = randomUrlSafe()
     val challenge =
@@ -97,17 +105,24 @@ object ChatGptAuth {
       openBrowser(authorizationUrl)
 
       val callback = withContext(Dispatchers.IO) { awaitCallback(server, state) }
+      log("Браузер вернул код входа, получаю токены")
+      // The browser is still on top here, so the app counts as a background app, and saver modes
+      // cut background apps off the network. Come back to the screen first, then keep trying
+      // while the network opens up.
+      onCodeReceived()
       val token =
-          postForm(
-              mapOf(
-                  "grant_type" to "authorization_code",
-                  "client_id" to callback.clientId,
-                  "code" to callback.code,
-                  "code_verifier" to verifier,
-                  "redirect_uri" to redirectUri,
-                  "resource" to RESOURCE,
-              ),
-          )
+          retryWhileOffline(log) {
+            postForm(
+                mapOf(
+                    "grant_type" to "authorization_code",
+                    "client_id" to callback.clientId,
+                    "code" to callback.code,
+                    "code_verifier" to verifier,
+                    "redirect_uri" to redirectUri,
+                    "resource" to RESOURCE,
+                ),
+            )
+          }
       save(appContext, credentialsFrom(token, callback.clientId))
     } finally {
       runCatching { server.close() }
@@ -144,6 +159,31 @@ object ChatGptAuth {
         save(appContext, refreshed)
         refreshed.access
       }
+
+  /**
+   * Repeats a request that could not reach the server at all. A reply from the server, even an
+   * error, ends the attempts: the authorization code is single-use.
+   */
+  private suspend fun <T> retryWhileOffline(log: (String) -> Unit, block: suspend () -> T): T {
+    val deadline = System.currentTimeMillis() + OFFLINE_RETRY_MS
+    var pause = 500L
+    var announced = false
+    while (true) {
+      try {
+        return block()
+      } catch (e: TokenEndpointException) {
+        throw e
+      } catch (e: IOException) {
+        if (System.currentTimeMillis() > deadline) throw e
+        if (!announced) {
+          announced = true
+          log("Сеть для приложения недоступна (${e.javaClass.simpleName}), пробую ещё")
+        }
+        delay(pause)
+        pause = (pause * 2).coerceAtMost(3000L)
+      }
+    }
+  }
 
   // ---- callback listener ----
 
