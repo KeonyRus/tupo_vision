@@ -4,7 +4,9 @@ import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
 import android.media.AudioDeviceInfo
+import android.media.AudioFormat
 import android.media.AudioManager
+import android.media.AudioTrack
 import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
@@ -161,8 +163,11 @@ class Tts(context: Context, private val onReady: (Boolean) -> Unit) {
  */
 object AudioRouter {
   private const val ROUTE_TIMEOUT_MS = 3000L
+  private const val KEEP_ALIVE_RATE = 16000
   private var routed = false
   private var previousMode = AudioManager.MODE_NORMAL
+  // Identity of the running keep-alive loop; a loop stops when it is no longer the current one.
+  @Volatile private var keepAliveToken: Any? = null
 
   val isRouted: Boolean
     get() = routed
@@ -187,6 +192,7 @@ object AudioRouter {
               audio.setCommunicationDevice(headset)
             }
             .getOrDefault(false)
+    startKeepAlive()
     val connected =
         accepted &&
             withTimeoutOrNull(ROUTE_TIMEOUT_MS) {
@@ -199,10 +205,76 @@ object AudioRouter {
 
   fun disable(context: Context) {
     if (!routed) return
+    keepAliveToken = null
     val audio = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     runCatching { audio.clearCommunicationDevice() }
     runCatching { audio.mode = previousMode }
     routed = false
+  }
+
+  /**
+   * Android drops an app's call-audio route a few seconds after the app stops playing or recording
+   * call audio itself. Recognition and speech run in system services, not in this process, so a
+   * silent call-audio track keeps the route to the glasses open between sentences.
+   */
+  private fun startKeepAlive() {
+    if (keepAliveToken != null) return
+    val minSize =
+        AudioTrack.getMinBufferSize(
+            KEEP_ALIVE_RATE,
+            AudioFormat.CHANNEL_OUT_MONO,
+            AudioFormat.ENCODING_PCM_16BIT,
+        )
+    if (minSize <= 0) return
+    val track =
+        try {
+          AudioTrack.Builder()
+              .setAudioAttributes(
+                  AudioAttributes.Builder()
+                      .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                      .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                      .build(),
+              )
+              .setAudioFormat(
+                  AudioFormat.Builder()
+                      .setSampleRate(KEEP_ALIVE_RATE)
+                      .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                      .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                      .build(),
+              )
+              .setBufferSizeInBytes(minSize * 2)
+              .setTransferMode(AudioTrack.MODE_STREAM)
+              .build()
+        } catch (e: Exception) {
+          return
+        }
+    if (track.state != AudioTrack.STATE_INITIALIZED) {
+      track.release()
+      return
+    }
+    val token = Any()
+    keepAliveToken = token
+    Thread(
+            {
+              // 20 ms of silence per write; the blocking write paces the loop.
+              val silence = ByteArray(KEEP_ALIVE_RATE / 50 * 2)
+              try {
+                track.play()
+                while (keepAliveToken === token) {
+                  if (track.write(silence, 0, silence.size) < 0) break
+                }
+              } catch (e: Exception) {
+                // The track died with the route; the next enable() starts a new one.
+              } finally {
+                if (keepAliveToken === token) keepAliveToken = null
+                runCatching { track.stop() }
+                track.release()
+              }
+            },
+            "call-audio-keepalive",
+        )
+        .apply { isDaemon = true }
+        .start()
   }
 }
 

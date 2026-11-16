@@ -33,6 +33,7 @@ import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -204,25 +205,31 @@ object Engine {
 
   // ---- ChatGPT ----
 
+  private var loginJob: Job? = null
+
+  /** A second call while a sign-in is pending drops it and starts a fresh one. */
   fun signIn(activity: Activity) {
-    if (_state.value.loginInProgress) return
+    loginJob?.cancel()
     update { it.copy(loginInProgress = true, error = null) }
-    scope.launch {
-      try {
-        ChatGptAuth.login(app) { url -> openInBrowser(activity, url) }
-        update { it.copy(signedIn = true) }
-        log("ChatGPT подключён")
-        bringToFront()
-        refreshModels()
-      } catch (e: CancellationException) {
-        throw e
-      } catch (e: Exception) {
-        fail("Вход в ChatGPT: ${e.message}")
-        bringToFront()
-      } finally {
-        update { it.copy(loginInProgress = false) }
-      }
-    }
+    val job =
+        scope.launch(start = CoroutineStart.LAZY) {
+          try {
+            ChatGptAuth.login(app) { url -> openInBrowser(activity, url) }
+            update { it.copy(signedIn = true) }
+            log("ChatGPT подключён")
+            bringToFront()
+            refreshModels()
+          } catch (e: CancellationException) {
+            throw e
+          } catch (e: Exception) {
+            fail("Вход в ChatGPT: ${e.message}")
+            bringToFront()
+          } finally {
+            if (loginJob === coroutineContext[Job]) update { it.copy(loginInProgress = false) }
+          }
+        }
+    loginJob = job
+    job.start()
   }
 
   fun signOut() {

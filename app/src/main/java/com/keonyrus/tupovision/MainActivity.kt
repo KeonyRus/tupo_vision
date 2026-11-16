@@ -288,8 +288,12 @@ private fun ChatGptSection(state: UiState, onSignIn: () -> Unit) {
       )
       TextButton(onClick = { Engine.signOut() }) { Text("Выйти") }
     } else {
-      Button(onClick = onSignIn, enabled = !state.loginInProgress) {
-        Text(if (state.loginInProgress) "Жду вход в браузере…" else "Continue with ChatGPT")
+      Button(onClick = onSignIn) { Text("Continue with ChatGPT") }
+      if (state.loginInProgress) {
+        Text(
+            "Жду вход в браузере. Если вкладка закрыта, нажми кнопку ещё раз.",
+            style = MaterialTheme.typography.bodySmall,
+        )
       }
       Text(
           "Нужен план Go, Plus или Pro. На экране входа разреши использовать план.",
